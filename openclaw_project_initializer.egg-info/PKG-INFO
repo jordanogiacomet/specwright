@@ -1,0 +1,86 @@
+Metadata-Version: 2.4
+Name: openclaw-project-initializer
+Version: 0.1.0
+Summary: Local-first CLI bootstrap tool for PRD-driven project initialization.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: jsonschema
+Requires-Dist: pyyaml
+
+# OpenClaw Project Initializer
+
+OpenClaw Project Initializer is a local-first CLI bootstrap tool for PRD-driven project setup.
+
+The V0 goal is to turn a natural-language project idea into a reviewable project bootstrap package. In V0, the initializer is expected to identify a supported archetype, ask guided follow-up questions, generate the initial bootstrap artifacts, and stop for human review before any implementation work begins.
+
+## Current V0 Scope
+
+- Local CLI direction with the planned entrypoint `initializer new`
+- Minimal local container runtime for running the CLI in the intended V0 environment
+- Documentation-first bootstrap generation
+- Human review required before any Codex + Ralph loop implementation
+- One supported archetype in V0: `Next.js + Payload + PostgreSQL`
+
+The repository now contains the minimal CLI scaffold, playbook/schema foundations, and a local container runtime path. Guided discovery and bootstrap generation are still introduced incrementally through later stories.
+
+## Source-of-Truth Files
+
+- `PRD.md`: primary product definition, scope, and acceptance criteria
+- `decisions.md`: stable repository-wide decisions and constraints
+- `progress.txt`: append-only execution log, validation record, and blockers
+- `AGENTS.md`: repository execution rules for Codex + Ralph loop
+- `docs/stories/`: bounded implementation stories executed one at a time
+
+## Repository Structure
+
+- `PRD.md`: product requirements for the initializer itself
+- `decisions.md`: accepted and provisional implementation decisions
+- `progress.txt`: operational memory for repository work
+- `AGENTS.md`: execution instructions for agents working in this repository
+- `docs/stories/`: story backlog for incremental implementation
+- `docker/Dockerfile`: minimal local Python container runtime for the CLI
+- `ralph.sh`: local execution wrapper currently present in the repository
+
+## Execution Model
+
+Implementation in this repository is story-driven. Work should proceed in small, reviewable increments, with one story active at a time and explicit validation recorded in `progress.txt`.
+
+The intended product flow for the initializer is:
+
+1. accept a natural-language project idea;
+2. detect the matching archetype;
+3. ask guided follow-up questions;
+4. generate bootstrap artifacts into a new directory;
+5. stop for human review.
+
+The initializer must not implement the generated project's business features in V0.
+
+## Local Container Runtime
+
+The intended V0 execution model is a local Python container. The repository includes `docker/Dockerfile` as the minimal runtime definition for that path.
+
+Build the image:
+
+```bash
+docker build -f docker/Dockerfile -t openclaw-initializer:local .
+```
+
+Run the CLI help in container:
+
+```bash
+docker run --rm openclaw-initializer:local
+```
+
+Run the current `initializer new` scaffold in container:
+
+```bash
+docker run --rm openclaw-initializer:local new
+```
+
+This container setup is for local execution only. It does not add deployment, orchestration, or any production behavior.
+
+## Next Recommended Steps
+
+- Keep `README.md` aligned with the repository source documents as implementation proceeds
+- Continue extending the CLI from the current scaffold into guided discovery and bootstrap generation
+- Keep the container runtime aligned with the CLI surface as later stories add behavior

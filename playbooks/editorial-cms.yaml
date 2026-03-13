@@ -1,0 +1,54 @@
+archetype: editorial-cms
+
+description: >
+  Content management system for editorial publishing with an admin panel
+  and optional public website.
+
+default_stack:
+  frontend: nextjs
+  backend: payload
+  database: postgres
+
+common_features:
+  - authentication
+  - roles
+  - media-library
+  - draft-publish
+  - preview
+  - scheduled-publishing
+
+design_system:
+  default: tailwind
+  alternatives:
+    - chakra
+    - material-ui
+
+scalability_profiles:
+  small_team:
+    description: single instance deployment
+  medium:
+    description: horizontal scaling with CDN
+  large:
+    description: multi-region deployment
+
+discovery_questions:
+
+  - id: public_site
+    question: "Will the CMS expose a public website?"
+    type: boolean
+    default: true
+
+  - id: scheduled_publishing
+    question: "Do you need scheduled publishing?"
+    type: boolean
+    default: false
+
+  - id: localization
+    question: "Will the content be multilingual?"
+    type: boolean
+    default: false
+
+architecture_notes:
+  - Use PostgreSQL for structured content.
+  - Store media in S3-compatible storage.
+  - CDN recommended for public assets.

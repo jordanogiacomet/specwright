@@ -5,13 +5,13 @@ from dataclasses import asdict
 from pathlib import Path
 
 from initializer.flow.new_project import (
-    BootstrapInput,
     collect_input,
-    load_semantic_spec,
     render_prd,
     render_decisions,
 )
 
+from initializer.models.bootstrap import BootstrapInput
+from initializer.runtime.spec_loader import load_semantic_spec
 
 def write_file(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

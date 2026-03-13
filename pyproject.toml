@@ -9,7 +9,8 @@ description = "Local-first CLI bootstrap tool for PRD-driven project initializat
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "jsonschema"
+  "jsonschema",
+  "pyyaml"
 ]
 
 [project.scripts]

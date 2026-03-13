@@ -1,13 +1,8 @@
 import argparse
 
-from initializer.flow.new_project import run_new_project
-from initializer.flow.plan_project import run_plan_project
-from initializer.flow.refine_project import run_refine_project
-from initializer.flow.doctor_project import run_doctor_project
-from initializer.flow.validate_project import run_validate_project
-
 
 def main():
+
     parser = argparse.ArgumentParser(prog="initializer")
 
     subparsers = parser.add_subparsers(dest="command")
@@ -30,21 +25,37 @@ def main():
     args = parser.parse_args()
 
     if args.command == "new":
+
+        from initializer.flow.new_project import run_new_project
+
         run_new_project(args.spec)
 
     elif args.command == "plan":
+
+        from initializer.flow.plan_project import run_plan_project
+
         run_plan_project(args.spec)
 
     elif args.command == "refine":
+
+        from initializer.flow.refine_project import run_refine_project
+
         run_refine_project(args.path)
 
     elif args.command == "doctor":
+
+        from initializer.flow.doctor_project import run_doctor_project
+
         run_doctor_project(args.path)
 
     elif args.command == "validate":
+
+        from initializer.flow.validate_project import run_validate_project
+
         run_validate_project(args.path)
 
     else:
+
         parser.print_help()
 
 
