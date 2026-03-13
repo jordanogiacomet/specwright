@@ -1,0 +1,29 @@
+{
+  "product_name": "OpenClaw Project Initializer",
+  "project_slug": "openclaw-project-initializer",
+  "archetype": "next-payload-postgres",
+
+  "summary": "Local-first CLI that converts a natural language project idea into a reviewable bootstrap package before implementation.",
+
+  "architecture": {
+    "frontend": "Next.js",
+    "cms": "Payload",
+    "database": "PostgreSQL",
+    "deployment": "Docker"
+  },
+
+  "stories": [
+    {
+      "story_id": "STORY-001",
+      "title": "Initialize Next.js project",
+      "description": "Create the base Next.js project structure with Payload integration",
+      "priority": "high"
+    },
+    {
+      "story_id": "STORY-002",
+      "title": "Add Docker environment",
+      "description": "Create docker-compose setup with PostgreSQL and app container",
+      "priority": "high"
+    }
+  ]
+}

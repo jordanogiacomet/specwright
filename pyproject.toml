@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Local-first CLI bootstrap tool for PRD-driven project initialization."
 readme = "README.md"
 requires-python = ">=3.11"
+dependencies = [
+  "jsonschema"
+]
 
 [project.scripts]
 initializer = "initializer.cli:main"
