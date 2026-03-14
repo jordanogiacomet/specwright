@@ -2,9 +2,7 @@ import argparse
 
 
 def main():
-
     parser = argparse.ArgumentParser(prog="initializer")
-
     subparsers = parser.add_subparsers(dest="command")
 
     new_parser = subparsers.add_parser("new")
@@ -25,39 +23,29 @@ def main():
     args = parser.parse_args()
 
     if args.command == "new":
-
         from initializer.flow.new_project import run_new_project
-
-        run_new_project(args.spec)
+        return run_new_project(args.spec) or 0
 
     elif args.command == "plan":
-
         from initializer.flow.plan_project import run_plan_project
-
-        run_plan_project(args.spec)
+        return run_plan_project(args.spec) or 0
 
     elif args.command == "refine":
-
         from initializer.flow.refine_project import run_refine_project
-
-        run_refine_project(args.path)
+        return run_refine_project(args.path) or 0
 
     elif args.command == "doctor":
-
         from initializer.flow.doctor_project import run_doctor_project
-
-        run_doctor_project(args.path)
+        return run_doctor_project(args.path) or 0
 
     elif args.command == "validate":
-
         from initializer.flow.validate_project import run_validate_project
-
-        run_validate_project(args.path)
+        return run_validate_project(args.path)
 
     else:
-
         parser.print_help()
+        return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
