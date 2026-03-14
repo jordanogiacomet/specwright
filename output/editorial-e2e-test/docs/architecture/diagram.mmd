@@ -1,0 +1,12 @@
+graph TD
+cdn["cdn"]
+frontend["frontend"]
+api["api"]
+database["database"]
+object_storage["object-storage"]
+worker["worker"]
+frontend --> api
+api --> database
+api --> object_storage
+worker --> database
+cdn --> frontend
