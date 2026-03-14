@@ -1,7 +1,7 @@
-"""
-Capability Engine
+"""Capability Engine.
 
 Applies capability handlers that modify architecture and stories.
+Handlers receive the full spec so they can respect structured discovery signals.
 """
 
 from initializer.engine.capability_derivation import normalize_capabilities
@@ -23,11 +23,9 @@ def apply_capabilities(spec):
 
     for capability in capabilities:
         handler = CAPABILITY_REGISTRY.get(capability)
-
         if handler:
-            architecture, stories = handler(architecture, stories)
+            architecture, stories = handler(spec, architecture, stories)
 
     spec["architecture"] = architecture
     spec["stories"] = stories
-
     return spec

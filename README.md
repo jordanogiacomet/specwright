@@ -1,60 +1,61 @@
 # OpenClaw Project Initializer
 
-Este repositorio implementa um inicializador de projetos orientado por PRD.
+Este repositório implementa um inicializador de projetos orientado por PRD.
 
-Hoje ele deve ser entendido como um projeto em modo de diagnostico e alinhamento interno, nao como um gerador finalizado ou como uma aplicacao de producao. O objetivo desta iteracao e preservar a ideia principal do produto enquanto reduz inconsistencias de contrato entre os engines, o fluxo de CLI e os artefatos gerados.
+Hoje ele deve ser entendido como um projeto em modo de diagnóstico e alinhamento interno, não como um gerador finalizado ou como uma aplicação de produção. O objetivo desta iteração é preservar a ideia principal do produto enquanto reduz inconsistências de contrato entre os engines, o fluxo de CLI e os artefatos gerados.
 
-Se outro ChatGPT ou agente for continuar o trabalho daqui, este README serve como mapa rapido do que o projeto e, do que realmente esta ativo no codigo, e de quais regras conceituais nao podem ser quebradas.
+Se outro ChatGPT ou agente for continuar o trabalho daqui, este README serve como mapa rápido do que o projeto é, do que realmente está ativo no código, e de quais regras conceituais não podem ser quebradas.
 
 ## Maturidade atual
 
 Leitura honesta do estado do projeto hoje:
 
-- complexidade conceitual: intermediario a avancado
-- maturidade de implementacao: prototipo funcional com pipeline principal operante
-- prontidao para producao: baixa a media
+- complexidade conceitual: intermediário a avançado
+- maturidade de implementação: MVP técnico funcional com pipeline principal operante
+- prontidão para produção: baixa a média
 - fluxo mais confiavel: `initializer new`
-- principal cenario validado: `editorial-cms` com admin + public site
+- principal cenário validado: `editorial-cms` com admin + public site
+- confiança atual do fluxo principal: melhor do que no início da iteração, com cobertura automatizada no repositório para unit, integration, e2e e regression
 
-O projeto ja tem uma ideia forte e uma modelagem de dominio clara, mas ainda convive com partes ativas e partes legadas/parciais. O foco correto nao e redesign, e sim consolidacao de contratos.
+O projeto já tem uma ideia forte e uma modelagem de domínio clara, mas ainda convive com partes ativas e partes legadas/parciais. O foco correto não é redesign, e sim consolidação de contratos e redução de drift entre o caminho principal e os caminhos secundários.
 
-## O que este projeto e
+## O que este projeto é
 
-A ideia central do repositorio e:
+A ideia central do repositório é:
 
-1. receber uma descricao textual de projeto via CLI
+1. receber uma descrição textual de projeto via CLI
 2. detectar um `archetype`
 3. derivar `stack`, `features` e `capabilities`
 4. opcionalmente enriquecer a descoberta com uma passada assistida por IA
-5. sintetizar um `spec` canonico em memoria
+5. sintetizar um `spec` canônico em memória
 6. gerar artefatos como PRD, arquitetura, stories e documentos derivados
 7. validar e refinar o resultado
 
-O produto a preservar e um `PRD-driven project initializer`.
+O produto a preservar é um `PRD-driven project initializer`.
 
-Nao transforme este repositorio em:
+Não transforme este repositório em:
 
-- uma aplicacao SaaS
-- um CMS de producao
-- um scaffold generico sem modelagem de dominio
-- um fluxo que colapse `archetype`, `capabilities`, `features` e `answers` em um conceito unico
+- uma aplicação SaaS
+- um CMS de produção
+- um scaffold genérico sem modelagem de domínio
+- um fluxo que colapse `archetype`, `capabilities`, `features` e `answers` em um conceito único
 
-## Estado atual da iteracao
+## Estado atual da iteração
 
-O repositorio esta em `understand-and-diagnose mode`.
+O repositório está em `understand-and-diagnose mode`.
 
 Isso significa que qualquer agente deve:
 
 1. entender o comportamento atual
-2. comparar codigo versus intencao documentada
-3. registrar inconsistencias
-4. fazer apenas mudancas seguras e bem justificadas
+2. comparar código versus intenção documentada
+3. registrar inconsistências
+4. fazer apenas mudanças seguras e bem justificadas
 
-Os documentos de contexto desta iteracao nao sao decorativos. Eles sao parte do contrato de trabalho.
+Os documentos de contexto desta iteração não são decorativos. Eles são parte do contrato de trabalho.
 
 ## Ordem obrigatoria de leitura
 
-Antes de qualquer mudanca relevante, leia nesta ordem:
+Antes de qualquer mudança relevante, leia nesta ordem:
 
 1. `progress.txt`
 2. `decisions.md`
@@ -62,7 +63,7 @@ Antes de qualquer mudanca relevante, leia nesta ordem:
 4. `architecture.md`
 5. `prd.json`
 
-Depois disso, leia o codigo do fluxo ativo, especialmente:
+Depois disso, leia o código do fluxo ativo, especialmente:
 
 - `initializer/__main__.py`
 - `initializer/cli.py`
@@ -77,13 +78,13 @@ Depois disso, leia o codigo do fluxo ativo, especialmente:
 - `initializer/validation/prd_validator.py`
 - `initializer/validation/story_coverage.py`
 
-## Conceitos canonicos do dominio
+## Conceitos canônicos do domínio
 
 Estes conceitos devem permanecer distintos:
 
 ### `archetype`
 
-Classificacao do tipo de produto.
+Classificação do tipo de produto.
 
 Exemplos atuais:
 
@@ -94,10 +95,10 @@ Exemplos atuais:
 
 Responsabilidade:
 
-- definir identidade canonica
-- fornecer stack padrao
-- fornecer features padrao
-- opcionalmente fornecer capabilities padrao
+- definir identidade canônica
+- fornecer stack padrão
+- fornecer features padrão
+- opcionalmente fornecer capabilities padrão
 
 ### `capability`
 
@@ -132,9 +133,9 @@ Exemplos atuais:
 
 Responsabilidade:
 
-- influenciar geracao de stories
+- influenciar geração de stories
 - influenciar arquitetura
-- influenciar cobertura e validacao
+- influenciar cobertura e validação
 
 ### `answers`
 
@@ -148,13 +149,13 @@ Exemplos atuais:
 - `surface`
 - `deploy_target`
 
-Importante: `answers` nao sao equivalentes a `archetype` nem a `capabilities`. Se houver relacao, ela deve ser derivada explicitamente.
+Importante: `answers` não são equivalentes a `archetype` nem a `capabilities`. Se houver relação, ela deve ser derivada explicitamente.
 
-## Contrato canonico do `spec`
+## Contrato canônico do `spec`
 
-O `spec` e a estrutura em memoria compartilhada pela pipeline.
+O `spec` é a estrutura em memória compartilhada pela pipeline.
 
-Campos minimos ativos hoje:
+Campos mínimos ativos hoje:
 
 - `prompt`
 - `archetype`
@@ -166,20 +167,34 @@ Campos minimos ativos hoje:
 - `stories`
 - `answers`
 
-Campos derivados que o fluxo `new` atual tambem popula:
+Campos derivados que o fluxo `new` atual também popula:
 
 - `constraints`
 - `design_system`
 - `risks`
 - `diagram`
 
-Campo opcional quando o modo assistido por IA esta ligado:
+Campo opcional quando o modo assistido por IA está ligado:
 
 - `discovery`
 
-## Fluxo ativo confirmado no codigo
+Campos relevantes dentro de `discovery` no estado atual:
 
-O entrypoint principal e:
+- `decision_signals`
+- `additional_questions`
+- `followup_answers`
+- `assumptions`
+- `open_questions`
+- `deployment_considerations`
+- `conflicts`
+- `applied_answer_updates`
+- `applied_capability_candidates`
+- `removed_capabilities`
+- `applied_feature_candidates`
+
+## Fluxo ativo confirmado no código
+
+O entrypoint principal é:
 
 - `python -m initializer`
 - ou o script `initializer` definido em `pyproject.toml`
@@ -192,14 +207,15 @@ Subcomandos expostos:
 - `doctor`
 - `validate`
 
-Observacao importante:
+Observação importante:
 
-- `new` e o caminho principal e o mais alinhado com a pipeline atual
-- `new --assist` ativa a descoberta assistida por IA
-- `plan`, `doctor` e partes da camada `runtime/` ainda exigem cautela porque nao estao no mesmo nivel de alinhamento do fluxo principal
+- `new` é o caminho principal e o mais alinhado com a pipeline atual
+- `new --assist` ativa uma descoberta assistida por IA com possível rodada de perguntas adicionais
+- `plan`, `doctor` e partes da camada `runtime/` ainda exigem cautela porque não estão no mesmo nível de alinhamento do fluxo principal
+- `validate` é o comando correto para checar `spec.json` gerado pelo fluxo atual
 - `validate` depende de `jsonschema` instalado no ambiente
 
-O caminho realmente confirmado e alinhado com a pipeline principal hoje e o `new`.
+O caminho realmente confirmado e alinhado com a pipeline principal hoje é o `new`.
 
 Fluxo ativo:
 
@@ -213,17 +229,19 @@ Pipeline real de `initializer new`:
 1. pede a descricao livre do projeto
 2. chama `build_initial_spec(prompt)`
 3. `build_initial_spec()` chama `detect_archetype(prompt)`
-4. coleta respostas estruturadas do usuario
-5. opcionalmente roda uma descoberta assistida por IA se `--assist` estiver ligado
-6. deriva capabilities a partir de `archetype_data`, `spec["archetype"]` e `spec["answers"]`
-7. aplica handlers de capability
-8. aplica conhecimento arquitetural adicional
-9. gera arquitetura consolidada
-10. gera stories consolidadas
-11. refina o spec
-12. deriva `constraints`, `design_system`, `risks` e `diagram`
-13. roda validacao estrutural e checagem de cobertura de stories
-14. escreve artefatos em `output/<project_slug>/`
+4. coleta respostas estruturadas do usuário
+5. opcionalmente roda uma primeira passada de descoberta assistida por IA se `--assist` estiver ligado
+6. se a descoberta retornar perguntas adicionais, coleta respostas estruturadas de follow-up
+7. se houver respostas de follow-up, roda uma segunda passada de descoberta com o contexto enriquecido
+8. deriva capabilities a partir de `archetype_data`, `spec["archetype"]`, `spec["answers"]` e sinais de descoberta
+9. aplica handlers de capability
+10. aplica conhecimento arquitetural adicional
+11. gera arquitetura consolidada
+12. gera stories consolidadas
+13. refina o spec
+14. deriva `constraints`, `design_system`, `risks` e `diagram`
+15. roda validação estrutural e checagem de cobertura de stories
+16. escreve artefatos em `output/<project_slug>/`
 
 ## Perguntas do CLI no fluxo `new`
 
@@ -252,11 +270,11 @@ Flags atualmente expostas em `initializer new`:
 - `--spec`
   - existe no CLI, mas hoje nao e o centro do fluxo interativo principal e deve ser tratado com cautela
 
-## Derivacao atual de archetype, features e capabilities
+## Derivação atual de archetype, features e capabilities
 
 ### Archetype
 
-O detector ativo esta em `initializer/engine/archetype_engine.py`.
+O detector ativo está em `initializer/engine/archetype_engine.py`.
 
 Ele retorna um objeto com:
 
@@ -275,7 +293,7 @@ Mapeamento atual:
 
 ### Features
 
-As features padrao atualmente vem do `archetype`.
+As features padrão atualmente vêm do `archetype`.
 
 Exemplo importante:
 
@@ -291,12 +309,12 @@ Hoje ele deriva capabilities por estas fontes:
 2. respostas estruturadas
 3. capabilities ja existentes no spec
 
-Derivacoes ativas e confirmadas:
+Derivações ativas e confirmadas:
 
 - `editorial-cms` inclui `cms`
 - `surface == admin_plus_public_site` adiciona `public-site`
 
-Derivacoes suportadas pelo motor, mas nao expostas diretamente no questionario atual:
+Derivações suportadas pelo motor, mas não expostas diretamente no questionário atual:
 
 - `scheduled-jobs`
 - `i18n`
@@ -314,27 +332,36 @@ O fluxo principal agora tem um passo opcional de descoberta assistida:
 Objetivo desse passo:
 
 - enriquecer respostas
-- sugerir capabilities candidatas validas
-- registrar `assumptions`, `open_questions` e `additional_questions`
-- fazer isso sem substituir o `spec` canonico
+- sugerir capabilities candidatas válidas
+- sugerir features candidatas válidas
+- produzir `decision_signals` estruturados
+- registrar `assumptions`, `open_questions`, `additional_questions`, `deployment_considerations` e `conflicts`
+- fazer isso sem substituir o `spec` canônico de maneira arbitrária
 
 Regras importantes desse merge:
 
-- nao reescreve `archetype`
-- nao reescreve `archetype_data`
-- nao reescreve `stack`
-- nao reescreve `features`
-- so enriquece `answers`, `capabilities` e `discovery`
+- não reescreve `archetype`
+- não reescreve `stack`
+- preserva `archetype_data` como referência principal
+- pode enriquecer `answers`, `capabilities`, `features` e `discovery` de forma conservadora
+- pode reconciliar capabilities quando os `decision_signals` ou respostas de follow-up contradizem inferências anteriores
 
-Dependencias e ambiente:
+Dependências e ambiente:
 
 - usa o pacote `openai`
 - usa `OPENAI_API_KEY`
 - o cliente atual usa `gpt-4.1-mini` para essa passada de descoberta
 
-Esse modo deve ser entendido como camada auxiliar e conservadora, nao como fonte principal da verdade do projeto.
+Comportamento interativo atual:
 
-## Engines principais e papeis reais
+- a primeira passada pode retornar objetos de pergunta estruturados
+- o CLI coleta essas respostas no terminal
+- as respostas ficam em `discovery.followup_answers`
+- se houve respostas novas, a descoberta é executada novamente antes da derivação final
+
+Esse modo deve ser entendido como camada auxiliar e conservadora, não como fonte principal isolada da verdade do projeto.
+
+## Engines principais e papéis reais
 
 ### `archetype_engine`
 
@@ -363,7 +390,7 @@ Acrescenta decisions baseadas em stack e features.
 
 Gera a arquitetura final preservando e mesclando enriquecimentos anteriores.
 
-Resultado tipico:
+Resultado típico:
 
 - `frontend`
 - `api`
@@ -374,34 +401,34 @@ Resultado tipico:
 
 ### `story_engine`
 
-Gera stories canonicas e faz `upsert` por `story_key` ou por titulo quando possivel.
+Gera stories canônicas e faz `upsert` por `story_key` ou por título quando possível.
 
 ### `refine_engine`
 
-Acrescenta refinamentos heuristicos ao PRD e stories operacionais fixas, incluindo:
+Acrescenta refinamentos heurísticos ao PRD e stories operacionais fixas, incluindo:
 
 - `ST-900`
 - `ST-901`
 
 ### Engines derivados
 
-O fluxo `new` atual tambem chama:
+O fluxo `new` atual também chama:
 
 - `constraint_engine`
 - `design_system_engine`
 - `risk_engine`
 - `architeture_diagram_engine`
 
-Esses engines alimentam documentos adicionais no diretorio de output.
+Esses engines alimentam documentos adicionais no diretório de output.
 
 ### Camada de IA
 
-Tambem existe uma camada auxiliar em `initializer/ai/` com dois papeis diferentes:
+Também existe uma camada auxiliar em `initializer/ai/` com dois papéis diferentes:
 
 - descoberta assistida para enriquecer entrada sem substituir o spec
 - refinamento heuristico posterior via `refine_engine`
 
-## Estrutura de saida do fluxo `new`
+## Estrutura de saída do fluxo `new`
 
 Para um projeto com slug `my-project`, o fluxo atual escreve:
 
@@ -421,46 +448,47 @@ output/my-project/
       diagram.mmd
 ```
 
-Referencia validada nesta iteracao:
+Referência validada nesta iteração:
 
 - `output/st012-editorial-validation/`
 
-Esse diretorio registra o caso editorial principal que foi usado como validacao de ponta a ponta da pipeline atual.
+Esse diretório registra o caso editorial principal que foi usado como validação de ponta a ponta da pipeline atual.
 
-## Cenario de referencia mais importante
+## Cenário de referência mais importante
 
-O principal cenario de referencia deste repositorio hoje e o editorial.
+O principal cenário de referência deste repositório hoje é o editorial.
 
 Prompt de referencia:
 
 `Editorial CMS with admin panel, public website, media library, preview, and scheduled publishing for articles`
 
-Resultado esperado de alto nivel no fluxo ativo:
+Resultado esperado de alto nível no fluxo ativo:
 
 - `archetype == editorial-cms`
 - `capabilities == ['cms', 'public-site']`
 - stack `nextjs + payload + postgres`
 - componentes como `cdn`, `frontend`, `api`, `database`, `object-storage`, `worker`
-- conjunto coerente de stories de bootstrap, features e operacao
+- conjunto coerente de stories de bootstrap, features e operação
 
-## O que esta validado versus o que ainda parece parcial
+## O que está validado versus o que ainda parece parcial
 
-### Fluxo mais confiavel hoje
+### Fluxo mais confiável hoje
 
 - `initializer new`
-- `initializer new --assist` quando ha `OPENAI_API_KEY` e a equipe quer enriquecer a descoberta sem abrir mao do contrato canonico
+- `initializer new --assist` quando há `OPENAI_API_KEY` e a equipe quer enriquecer a descoberta sem abrir mão do contrato canônico
+- `initializer validate output/<slug>` para validar `spec.json` do fluxo atual
 - `build_initial_spec()`
 - `detect_archetype()`
-- derivacao explicita de capabilities
-- aplicacao de capability handlers
-- geracao de arquitetura
-- geracao de stories
+- derivação explícita de capabilities
+- aplicação de capability handlers
+- geração de arquitetura
+- geração de stories
 - derivacao de constraints, design system, risks e diagram
 - escrita em `output/<slug>/`
 
-### Areas que outro agente deve tratar com cautela
+### Áreas que outro agente deve tratar com cautela
 
-Existem modulos que parecem legados, paralelos ou apenas parcialmente alinhados com o fluxo ativo:
+Existem módulos que parecem legados, paralelos ou apenas parcialmente alinhados com o fluxo ativo:
 
 - `initializer/runtime/`
 - `initializer/synthesis/`
@@ -470,47 +498,49 @@ Existem modulos que parecem legados, paralelos ou apenas parcialmente alinhados 
 
 Pontos importantes:
 
-- `initializer/flow/plan_project.py` referencia `collect_input` e `render_decisions` em `initializer.flow.new_project`, mas esses simbolos nao existem hoje nesse modulo
+- `initializer/flow/plan_project.py` referencia `collect_input` e `render_decisions` em `initializer.flow.new_project`, mas esses símbolos não existem hoje nesse módulo
 - `doctor` valida uma estrutura de projeto diferente da que `new` escreve atualmente
-- `validate` depende de `jsonschema`, que esta em `pyproject.toml`, mas precisa estar instalado no ambiente
-- `new` expoe `--spec`, mas o caminho principal continua sendo interativo e o parametro nao aparece como elemento central no fluxo atual
+- `validate` depende de `jsonschema`, que está em `pyproject.toml`, mas precisa estar instalado no ambiente
+- `new` expõe `--spec`, mas o caminho principal continua sendo interativo e o parâmetro não aparece como elemento central no fluxo atual
 
-Em outras palavras: o repositorio tem um caminho principal funcional e caminhos secundarios que ainda nao compartilham o mesmo contrato com o mesmo grau de confianca.
+Em outras palavras: o repositório tem um caminho principal funcional e caminhos secundários que ainda não compartilham o mesmo contrato com o mesmo grau de confiança.
 
-## Inconsistencias e limites conhecidos
+## Inconsistências e limites conhecidos
 
-Outro agente precisa saber destas tensoes atuais antes de mexer no codigo:
+Outro agente precisa saber destas tensões atuais antes de mexer no código:
 
-1. O projeto melhorou o contrato canonico do fluxo `new`, mas ainda existem modulos antigos com semantica diferente.
-2. Nem toda capability suportada pelo registry e produzida automaticamente pelo questionario atual.
-3. Os handlers de capability ainda nao usam exatamente a mesma estrategia de identidade e merge que os geradores canonicos.
-4. A cobertura de capability em `initializer/validation/story_coverage.py` ainda e baseada em busca textual simples dentro da descricao da story.
-5. Existem dois estilos de escrita de artefatos no repositorio:
+1. O projeto melhorou o contrato canônico do fluxo `new`, mas ainda existem módulos antigos com semântica diferente.
+2. Nem toda capability suportada pelo registry é produzida automaticamente pelo questionário atual.
+3. Os handlers de capability ainda não usam exatamente a mesma estratégia de identidade e merge que os geradores canônicos.
+4. A cobertura de capability em `initializer/validation/story_coverage.py` ainda é baseada em busca textual simples dentro da descrição da story.
+5. Existem dois estilos de escrita de artefatos no repositório:
    - writers inline no fluxo `new`
    - renderers dedicados em `initializer/renderers/`
 
-Isso nao invalida o projeto, mas significa que mudancas amplas sem diagnostico podem reintroduzir drift rapidamente.
+Isso não invalida o projeto, mas significa que mudanças amplas sem diagnóstico podem reintroduzir drift rapidamente.
 
-## Mapa do repositorio
+## Mapa do repositório
 
-Diretorios mais importantes:
+Diretórios mais importantes:
 
 - `initializer/flow/`
-  - orquestracao dos subcomandos
+  - orquestração dos subcomandos
 - `initializer/engine/`
-  - motores centrais de derivacao e sintese
+  - motores centrais de derivação e síntese
 - `initializer/capabilities/`
   - handlers por capability
 - `initializer/validation/`
-  - validacoes do spec e cobertura de stories
+  - validações do spec e cobertura de stories
 - `initializer/renderers/`
-  - renderizacao e escrita de docs auxiliares
+  - renderização e escrita de docs auxiliares
 - `initializer/runtime/`
   - caminho alternativo para semantic spec
 - `initializer/synthesis/`
-  - fluxo mais antigo de sintese
+  - fluxo mais antigo de síntese
+- `tests/`
+  - cobertura automatizada organizada em `unit`, `integration`, `e2e` e `regression`
 - `output/`
-  - artefatos gerados e exemplos de referencia
+  - artefatos gerados e exemplos de referência
 - `contracts/` e `schemas/`
   - contratos auxiliares e schema
 
@@ -525,22 +555,54 @@ Documentos raiz mais importantes:
 
 ## Regras de trabalho para outro agente
 
-Se voce estiver continuando este projeto, siga estas regras:
+Se você estiver continuando este projeto, siga estas regras:
 
 1. Preserve a identidade do produto como inicializador PRD-driven.
-2. Nao colapse `archetype`, `capabilities`, `features` e `answers`.
-3. Compare sempre documentacao e implementacao.
+2. Não colapse `archetype`, `capabilities`, `features` e `answers`.
+3. Compare sempre documentação e implementação.
 4. Considere o fluxo `initializer new` como a fonte principal de comportamento atual.
-5. Trate `runtime/`, `synthesis/` e alguns subcomandos secundarios como areas que exigem verificacao antes de confiar.
-6. Registre descobertas e mudancas em `progress.txt`.
-7. Nao faca refatoracoes largas sem antes explicar qual contrato existente esta quebrado.
+5. Trate `runtime/`, `synthesis/` e alguns subcomandos secundários como áreas que exigem verificação antes de confiar.
+6. Registre descobertas e mudanças em `progress.txt`.
+7. Não faça refatorações largas sem antes explicar qual contrato existente está quebrado.
+
+## Testes e validação
+
+O repositório agora contém uma suíte de testes em:
+
+- `tests/unit/`
+- `tests/integration/`
+- `tests/e2e/`
+- `tests/regression/`
+
+Essa suíte cobre, pelo menos no estado atual do repositório:
+
+- contrato canônico do spec
+- archetype e capability derivation
+- merge de descoberta assistida
+- composição de arquitetura e stories
+- geração editorial ponta a ponta
+- validação de `spec.json`
+- regressões importantes do fluxo editorial
+
+Observação importante sobre ambiente:
+
+- `pytest` não está listado nas dependências de runtime em `pyproject.toml`
+- para contribuir localmente, trate `pytest` como dependência de desenvolvimento a instalar manualmente
+- o último registro em `progress.txt` aponta uma suíte com 24 testes passando, mas essa afirmação pertence ao último ciclo validado, não a qualquer ambiente novo automaticamente
 
 ## Como rodar
 
-Instalacao local recomendada:
+Instalação local recomendada:
 
 ```bash
 python -m pip install -e .
+```
+
+Instalação recomendada para desenvolvimento com testes:
+
+```bash
+python -m pip install -e .
+python -m pip install pytest
 ```
 
 Ver ajuda:
@@ -567,11 +629,18 @@ Validar um output gerado:
 python -m initializer validate output/<project-slug>
 ```
 
-Observacoes:
+Rodar a suíte de testes:
 
-- o comando `validate` importa `jsonschema`; se o ambiente nao estiver com as dependencias instaladas, ele vai falhar antes da validacao
+```bash
+pytest
+```
+
+Observações:
+
+- o comando `validate` importa `jsonschema`; se o ambiente não estiver com as dependências instaladas, ele vai falhar antes da validação
 - o modo `--assist` depende de `OPENAI_API_KEY`
+- a suíte local depende de `pytest`
 
 ## O que um outro ChatGPT deve lembrar em uma frase
 
-Este repositorio nao e um scaffold generico: ele e um inicializador orientado por PRD, com pipeline baseada em engines especializadas, um fluxo principal hoje centrado em `initializer new` e uma camada opcional de descoberta assistida por IA, devendo ser evoluido por alinhamento de contratos, nao por redesign do produto.
+Este repositório não é um scaffold genérico: ele é um inicializador orientado por PRD, com pipeline baseada em engines especializadas, um fluxo principal hoje centrado em `initializer new` e uma camada opcional de descoberta assistida por IA, devendo ser evoluído por alinhamento de contratos, não por redesign do produto.

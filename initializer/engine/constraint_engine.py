@@ -1,94 +1,76 @@
-"""
-Constraint Engine
+"""Constraint Engine.
 
-Derives architectural constraints from archetype, capabilities
-and deployment configuration.
+Generates system constraints from capabilities, features, and structured discovery signals.
 """
+
+
+def _get_decision_signals(spec):
+    discovery = spec.get("discovery", {})
+    if not isinstance(discovery, dict):
+        return {}
+    signals = discovery.get("decision_signals", {})
+    if not isinstance(signals, dict):
+        return {}
+    return signals
+
+
+def _append_unique(target, value):
+    if value not in target:
+        target.append(value)
 
 
 def generate_constraints(spec):
-
-    archetype = spec.get("archetype")
     capabilities = spec.get("capabilities", [])
-    answers = spec.get("answers", {})
+    features = spec.get("features", [])
+    signals = _get_decision_signals(spec)
 
-    constraints = {
-        "performance": [],
-        "scalability": [],
-        "security": [],
-        "operational": [],
+    needs_public_site = signals.get("needs_public_site")
+    needs_i18n = signals.get("needs_i18n")
+    needs_scheduled_jobs = signals.get("needs_scheduled_jobs")
+    primary_audience = signals.get("primary_audience")
+    app_shape = signals.get("app_shape")
+
+    performance: list[str] = []
+    scalability: list[str] = []
+    security: list[str] = []
+    operational: list[str] = []
+
+    if needs_public_site is True or ("public-site" in capabilities and needs_public_site is not False):
+        _append_unique(performance, "Public pages should render quickly under normal load.")
+        _append_unique(performance, "API responses should target low median latency for public traffic.")
+        _append_unique(performance, "Public assets should be cacheable and efficiently delivered.")
+    else:
+        _append_unique(performance, "Authenticated application screens should respond quickly for common team workflows.")
+        _append_unique(performance, "API responses should target low median latency for interactive application usage.")
+
+    _append_unique(scalability, "System should support horizontal scaling of application servers.")
+    _append_unique(scalability, "Database must support concurrent authenticated users.")
+
+    if needs_scheduled_jobs is True or "scheduled-jobs" in capabilities:
+        _append_unique(scalability, "Background job workers must scale independently from interactive application traffic.")
+
+    _append_unique(security, "All authentication flows must enforce secure password hashing.")
+    _append_unique(security, "All external APIs must require authentication or signed requests.")
+
+    if "roles" in features:
+        _append_unique(security, "Role and permission boundaries must be enforced consistently.")
+
+    if primary_audience == "internal_teams" or app_shape == "internal-work-organizer":
+        _append_unique(security, "Internal operational data must be isolated to authorized users and teams.")
+
+    if needs_i18n is True or "i18n" in capabilities:
+        _append_unique(operational, "Localization resources and locale handling must remain consistent across frontend and backend.")
+
+    _append_unique(operational, "Application must support environment-based configuration.")
+    _append_unique(operational, "Structured logging should be used for all backend services.")
+
+    deploy_target = spec.get("answers", {}).get("deploy_target")
+    if deploy_target == "docker" or deploy_target == "docker_and_k8s_later":
+        _append_unique(operational, "Application must run in containerized environments.")
+
+    return {
+        "performance": performance,
+        "scalability": scalability,
+        "security": security,
+        "operational": operational,
     }
-
-    # --------------------------------------------------
-    # PERFORMANCE
-    # --------------------------------------------------
-
-    constraints["performance"].append(
-        "Public pages should render in under 500ms under normal load."
-    )
-
-    constraints["performance"].append(
-        "API responses should target <200ms median latency."
-    )
-
-    if "public-site" in capabilities:
-
-        constraints["performance"].append(
-            "Public assets must be cacheable via CDN."
-        )
-
-    # --------------------------------------------------
-    # SCALABILITY
-    # --------------------------------------------------
-
-    constraints["scalability"].append(
-        "System should support horizontal scaling of application servers."
-    )
-
-    constraints["scalability"].append(
-        "Database must support concurrent editorial users."
-    )
-
-    if "scheduled-jobs" in capabilities:
-
-        constraints["scalability"].append(
-            "Background job workers must scale independently."
-        )
-
-    # --------------------------------------------------
-    # SECURITY
-    # --------------------------------------------------
-
-    constraints["security"].append(
-        "All authentication flows must enforce secure password hashing."
-    )
-
-    constraints["security"].append(
-        "All external APIs must require authentication or signed requests."
-    )
-
-    if archetype == "editorial-cms":
-
-        constraints["security"].append(
-            "Editorial roles must enforce permission boundaries."
-        )
-
-    # --------------------------------------------------
-    # OPERATIONAL
-    # --------------------------------------------------
-
-    constraints["operational"].append(
-        "Application must support environment-based configuration."
-    )
-
-    constraints["operational"].append(
-        "Structured logging should be used for all backend services."
-    )
-
-    if answers.get("deploy_target") == "docker":
-
-        constraints["operational"].append(
-            "Application must run in containerized environments."
-        )
-
-    return constraints

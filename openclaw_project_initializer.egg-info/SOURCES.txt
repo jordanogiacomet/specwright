@@ -7,7 +7,8 @@ initializer/test_prd_scoring.py
 initializer/ai/__init__.py
 initializer/ai/architecture_review.py
 initializer/ai/client.py
-initializer/ai/discovery_agent.py
+initializer/ai/discovery_engine.py
+initializer/ai/discovery_merge.py
 initializer/ai/prd_review.py
 initializer/ai/prd_scorer.py
 initializer/ai/refine_engine.py
