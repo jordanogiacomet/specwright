@@ -390,6 +390,9 @@ def _confirmed_signal_values(payload: dict[str, Any]) -> dict[str, Any]:
     """Extract signal values that have been explicitly confirmed by the user
     via followup answers.  These are 'confirmed' signals — they take
     precedence over AI-inferred signals.
+
+    Special handling for core_work_features: boolean values are skipped
+    because they cannot meaningfully represent a list of domain features.
     """
     existing = payload.get("existing_discovery", {})
     if not isinstance(existing, dict):
@@ -405,8 +408,16 @@ def _confirmed_signal_values(payload: dict[str, Any]) -> dict[str, Any]:
             continue
         signal_key = answer_data.get("signal_key")
         value = answer_data.get("value")
-        if isinstance(signal_key, str) and signal_key.strip():
-            confirmed[signal_key.strip()] = value
+        if not isinstance(signal_key, str) or not signal_key.strip():
+            continue
+
+        sk = signal_key.strip()
+
+        # core_work_features must be a list — skip booleans
+        if sk == "core_work_features" and not isinstance(value, list):
+            continue
+
+        confirmed[sk] = value
 
     return confirmed
 

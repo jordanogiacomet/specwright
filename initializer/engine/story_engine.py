@@ -2,6 +2,13 @@
 
 Generates implementation stories from features, capabilities,
 stack, and structured discovery signals.
+
+Key improvements in this version:
+- More core_work_features generate stories (approvals, team-visibility)
+- Product shape stories for client-portal, backoffice, content-platform
+- Less restrictive condition for automation-jobs story
+- Notifications story when feature is present
+- Draft-publish story when feature is present
 """
 
 
@@ -75,6 +82,7 @@ def generate_stories(spec):
 
     primary_audience = signals.get("primary_audience")
     app_shape = signals.get("app_shape")
+    needs_scheduled_jobs = signals.get("needs_scheduled_jobs")
     core_work_features = _normalize_core_work_features(
         signals.get("core_work_features", [])
     )
@@ -115,6 +123,8 @@ def generate_stories(spec):
         stories.append(story)
         return story
 
+    # --- Bootstrap stories ---
+
     upsert_story(
         "bootstrap.repository",
         "Initialize project repository",
@@ -142,6 +152,8 @@ def generate_stories(spec):
             f"Implement frontend using {stack['frontend']}.",
         )
 
+    # --- Feature stories ---
+
     if "authentication" in features:
         upsert_story(
             "feature.authentication",
@@ -161,6 +173,13 @@ def generate_stories(spec):
             "feature.media-library",
             "Implement media library",
             "Allow uploading and managing media assets.",
+        )
+
+    if "draft-publish" in features:
+        upsert_story(
+            "feature.draft-publish",
+            "Implement draft and publish workflow",
+            "Add draft, review, and publish states for content items.",
         )
 
     if "preview" in features:
@@ -191,12 +210,58 @@ def generate_stories(spec):
             "Integrate payment processing for transactions.",
         )
 
+    if "notifications" in features:
+        upsert_story(
+            "feature.notifications",
+            "Implement notification system",
+            "Add notification delivery for important events, with user preferences and delivery rules.",
+        )
+
+    if "analytics" in features:
+        upsert_story(
+            "feature.analytics",
+            "Implement analytics tracking",
+            "Add analytics instrumentation for usage tracking and operational visibility.",
+        )
+
+    if "billing" in features:
+        upsert_story(
+            "feature.billing",
+            "Implement billing and subscription management",
+            "Add billing flows, subscription management, and payment lifecycle handling.",
+        )
+
+    # --- Product shape stories ---
+
     if app_shape == "internal-work-organizer" or primary_audience == "internal_teams":
         upsert_story(
             "product.internal-dashboard",
             "Build internal dashboard shell",
             "Create the main internal application shell and navigation for team workflows.",
         )
+
+    if app_shape == "client-portal":
+        upsert_story(
+            "product.client-portal-shell",
+            "Build client portal shell",
+            "Create the client-facing application shell, navigation, and access control.",
+        )
+
+    if app_shape == "backoffice":
+        upsert_story(
+            "product.backoffice-shell",
+            "Build backoffice application shell",
+            "Create the internal backoffice shell with navigation, filtering, and operational views.",
+        )
+
+    if app_shape == "content-platform":
+        upsert_story(
+            "product.content-platform-shell",
+            "Build content platform shell",
+            "Create the content management and delivery shell with editorial navigation.",
+        )
+
+    # --- Core work feature stories ---
 
     if "deadlines" in core_work_features:
         upsert_story(
@@ -205,7 +270,7 @@ def generate_stories(spec):
             "Implement domain support for deadlines, due dates, and related validations.",
         )
 
-    if "progress-tracking" in core_work_features or "progress tracking" in core_work_features:
+    if "progress-tracking" in core_work_features or "progress tracking" in core_work_features or "project-tracking" in core_work_features or "project tracking" in core_work_features:
         upsert_story(
             "product.progress-tracking",
             "Implement progress tracking",
@@ -233,11 +298,36 @@ def generate_stories(spec):
             "Generate summary reports for work progress and operational visibility.",
         )
 
-    if "scheduled-jobs" in capabilities and app_shape == "internal-work-organizer":
+    if "approvals" in core_work_features:
         upsert_story(
-            "product.automation-jobs",
-            "Implement workflow automation jobs",
-            "Implement scheduled jobs for reminders, progress automation, or recurring operational tasks.",
+            "product.approvals",
+            "Implement approval workflows",
+            "Add approval steps and sign-off flows for work items that require review.",
         )
+
+    if "team-visibility" in core_work_features or "team visibility" in core_work_features:
+        upsert_story(
+            "product.team-visibility",
+            "Implement team visibility",
+            "Add team-level views showing workload distribution, progress, and capacity.",
+        )
+
+    # --- Automation stories ---
+    # Generate automation-jobs story when scheduled-jobs capability is present
+    # and the product shape suggests internal workflows (not just editorial publishing).
+    if "scheduled-jobs" in capabilities:
+        if app_shape in {"internal-work-organizer", "backoffice", "worker-pipeline"}:
+            upsert_story(
+                "product.automation-jobs",
+                "Implement workflow automation jobs",
+                "Implement scheduled jobs for reminders, progress automation, or recurring operational tasks.",
+            )
+        elif needs_scheduled_jobs is True and app_shape not in {"content-platform"}:
+            # For non-editorial shapes with explicit scheduled-jobs need
+            upsert_story(
+                "product.automation-jobs",
+                "Implement background automation jobs",
+                "Implement scheduled and background jobs for application automation workflows.",
+            )
 
     return stories
