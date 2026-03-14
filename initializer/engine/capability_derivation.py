@@ -1,8 +1,7 @@
-"""
-Capability derivation helpers.
+"""Capability derivation helpers.
 
-Derives canonical capability identifiers from archetype metadata
-and structured answers.
+Derives canonical capability identifiers from archetype metadata,
+structured answers, and structured discovery signals.
 """
 
 from initializer.engine.archetype_engine import (
@@ -36,18 +35,15 @@ def default_capabilities_for_archetype(archetype=None, archetype_data=None):
         return []
 
     definition = ARCHETYPE_DEFINITIONS.get(canonical_archetype_id(archetype), {})
-
     return normalize_capabilities(definition.get("capabilities", []))
 
 
 def _lookup_path(data, path):
     current = data
-
     for key in path:
         if not isinstance(current, dict) or key not in current:
             return None
         current = current[key]
-
     return current
 
 
@@ -56,7 +52,6 @@ def _lookup_first(data, paths):
         value = _lookup_path(data, path)
         if value is not None:
             return value
-
     return None
 
 
@@ -66,11 +61,9 @@ def _is_enabled(value):
 
     if isinstance(value, str):
         lowered = value.strip().lower()
-
         if lowered in {"1", "true", "yes", "y", "on"}:
             return True
-
-        if lowered in {"0", "false", "no", "n", "off", ""}:
+        if lowered in {"0", "false", "no", "n", "off", "", "2"}:
             return False
 
     return bool(value)
@@ -85,13 +78,37 @@ def _append_capability(capabilities, capability):
         capabilities.append(capability)
 
 
-def derive_capabilities(archetype=None, archetype_data=None, answers=None, existing_capabilities=None):
+def _remove_capability(capabilities, capability):
+    while capability in capabilities:
+        capabilities.remove(capability)
+
+
+def _get_discovery_signals(spec):
+    discovery = spec.get("discovery", {})
+    if not isinstance(discovery, dict):
+        return {}
+
+    signals = discovery.get("decision_signals", {})
+    if not isinstance(signals, dict):
+        return {}
+
+    return dict(signals)
+
+
+def derive_capabilities(
+    archetype=None,
+    archetype_data=None,
+    answers=None,
+    existing_capabilities=None,
+    decision_signals=None,
+):
     capabilities = normalize_capabilities(existing_capabilities)
 
     for capability in default_capabilities_for_archetype(archetype, archetype_data):
         _append_capability(capabilities, capability)
 
     answers = answers or {}
+    decision_signals = decision_signals or {}
 
     surface = _lookup_first(
         answers,
@@ -102,16 +119,33 @@ def derive_capabilities(archetype=None, archetype_data=None, answers=None, exist
         ],
     )
 
-    if surface == "admin_plus_public_site" or _is_any_enabled(
-        answers,
-        [
-            ("public_site",),
-            ("guided_answers", "public_site"),
-        ],
-    ):
-        _append_capability(capabilities, "public-site")
+    needs_public_site = decision_signals.get("needs_public_site")
+    needs_cms = decision_signals.get("needs_cms")
+    needs_i18n = decision_signals.get("needs_i18n")
+    needs_scheduled_jobs = decision_signals.get("needs_scheduled_jobs")
+    primary_audience = decision_signals.get("primary_audience")
+    app_shape = decision_signals.get("app_shape")
 
-    if _is_any_enabled(
+    # explicit signals win over onboarding defaults
+    if needs_public_site is True:
+        _append_capability(capabilities, "public-site")
+    elif needs_public_site is False:
+        _remove_capability(capabilities, "public-site")
+    else:
+        if surface == "admin_plus_public_site" or _is_any_enabled(
+            answers,
+            [
+                ("public_site",),
+                ("guided_answers", "public_site"),
+            ],
+        ):
+            _append_capability(capabilities, "public-site")
+
+    if needs_scheduled_jobs is True:
+        _append_capability(capabilities, "scheduled-jobs")
+    elif needs_scheduled_jobs is False:
+        _remove_capability(capabilities, "scheduled-jobs")
+    elif _is_any_enabled(
         answers,
         [
             ("scheduled_publishing",),
@@ -124,7 +158,11 @@ def derive_capabilities(archetype=None, archetype_data=None, answers=None, exist
     ):
         _append_capability(capabilities, "scheduled-jobs")
 
-    if _is_any_enabled(
+    if needs_i18n is True:
+        _append_capability(capabilities, "i18n")
+    elif needs_i18n is False:
+        _remove_capability(capabilities, "i18n")
+    elif _is_any_enabled(
         answers,
         [
             ("localization",),
@@ -135,7 +173,20 @@ def derive_capabilities(archetype=None, archetype_data=None, answers=None, exist
     ):
         _append_capability(capabilities, "i18n")
 
-    return capabilities
+    if needs_cms is True:
+        _append_capability(capabilities, "cms")
+    elif needs_cms is False:
+        _remove_capability(capabilities, "cms")
+
+    # shape-based cleanup
+    if app_shape in {"internal-work-organizer", "backoffice", "worker-pipeline"}:
+        if needs_cms is not True:
+            _remove_capability(capabilities, "cms")
+
+    if primary_audience == "internal_teams" and needs_public_site is False:
+        _remove_capability(capabilities, "public-site")
+
+    return normalize_capabilities(capabilities)
 
 
 def derive_capabilities_for_spec(spec):
@@ -144,6 +195,6 @@ def derive_capabilities_for_spec(spec):
         archetype_data=spec.get("archetype_data"),
         answers=spec.get("answers"),
         existing_capabilities=spec.get("capabilities"),
+        decision_signals=_get_discovery_signals(spec),
     )
-
     return spec
