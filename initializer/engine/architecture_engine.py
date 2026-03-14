@@ -5,22 +5,106 @@ Generates system architecture based on stack and features.
 """
 
 
+GENERIC_COMPONENT_TECHNOLOGIES = {
+    "background-worker",
+}
+
+
+def _unique(values):
+    items = []
+
+    for value in values:
+        if value not in items:
+            items.append(value)
+
+    return items
+
+
+def _clone_architecture(existing_architecture):
+    architecture = dict(existing_architecture)
+    architecture["components"] = [
+        dict(component)
+        for component in existing_architecture.get("components", [])
+    ]
+    architecture["decisions"] = list(existing_architecture.get("decisions", []))
+
+    return architecture
+
+
+def _merge_component(existing_component, incoming_component):
+    merged = dict(existing_component)
+
+    for key, value in incoming_component.items():
+        if key == "name" or value in (None, "", []):
+            continue
+
+        existing_value = merged.get(key)
+
+        if not existing_value:
+            merged[key] = value
+            continue
+
+        if existing_value == value:
+            continue
+
+        chosen_value = existing_value
+        alternate_value = value
+
+        if (
+            key == "technology"
+            and existing_value in GENERIC_COMPONENT_TECHNOLOGIES
+        ):
+            chosen_value = value
+            alternate_value = existing_value
+
+        merged[key] = chosen_value
+
+        alternatives_key = f"{key}_alternatives"
+        alternatives = _unique(
+            list(merged.get(alternatives_key, [])) + [alternate_value]
+        )
+        merged[alternatives_key] = alternatives
+
+    return merged
+
+
 def generate_architecture(spec):
 
     stack = spec.get("stack", {})
     features = spec.get("features", [])
+    existing_architecture = spec.get("architecture") or {}
 
     frontend = stack.get("frontend")
     backend = stack.get("backend")
     database = stack.get("database")
 
-    components = []
-    decisions = []
+    architecture = _clone_architecture(existing_architecture)
+    components = architecture["components"]
+    decisions = architecture["decisions"]
+
+    def add_component(component):
+        name = component.get("name")
+
+        if name:
+            for index, existing_component in enumerate(components):
+                if existing_component.get("name") == name:
+                    components[index] = _merge_component(
+                        existing_component,
+                        component,
+                    )
+                    return
+
+        if component not in components:
+            components.append(dict(component))
+
+    def add_decision(decision):
+        if decision not in decisions:
+            decisions.append(decision)
 
     # frontend
 
     if frontend:
-        components.append(
+        add_component(
             {
                 "name": "frontend",
                 "technology": frontend,
@@ -31,7 +115,7 @@ def generate_architecture(spec):
     # backend / api
 
     if backend:
-        components.append(
+        add_component(
             {
                 "name": "api",
                 "technology": backend,
@@ -42,7 +126,7 @@ def generate_architecture(spec):
     # database
 
     if database:
-        components.append(
+        add_component(
             {
                 "name": "database",
                 "technology": database,
@@ -54,7 +138,7 @@ def generate_architecture(spec):
 
     if "media-library" in features:
 
-        components.append(
+        add_component(
             {
                 "name": "object-storage",
                 "technology": "s3-compatible",
@@ -62,7 +146,7 @@ def generate_architecture(spec):
             }
         )
 
-        decisions.append(
+        add_decision(
             "Media assets stored in object storage."
         )
 
@@ -70,7 +154,7 @@ def generate_architecture(spec):
 
     if "scheduled-publishing" in features:
 
-        components.append(
+        add_component(
             {
                 "name": "worker",
                 "technology": backend,
@@ -78,7 +162,7 @@ def generate_architecture(spec):
             }
         )
 
-        decisions.append(
+        add_decision(
             "Background worker processes scheduled jobs."
         )
 
@@ -86,20 +170,21 @@ def generate_architecture(spec):
 
     if "authentication" in features:
 
-        decisions.append(
+        add_decision(
             "Authentication handled via secure session or JWT."
         )
 
     # caching recommendation
 
-    decisions.append(
+    add_decision(
         "Introduce caching layer for frequently accessed content."
     )
 
-    architecture = {
-        "style": "service-oriented",
-        "components": components,
-        "decisions": decisions,
-    }
+    architecture["style"] = existing_architecture.get(
+        "style",
+        "service-oriented",
+    )
+    architecture["components"] = components
+    architecture["decisions"] = decisions
 
     return architecture

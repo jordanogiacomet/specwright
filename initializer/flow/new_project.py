@@ -2,12 +2,26 @@ from pathlib import Path
 import json
 
 from initializer.engine.archetype_engine import detect_archetype
+from initializer.engine.capability_derivation import derive_capabilities_for_spec
 from initializer.engine.capability_engine import apply_capabilities
 from initializer.engine.knowledge_engine import apply_knowledge
 from initializer.engine.architecture_engine import generate_architecture
+from initializer.engine.constraint_engine import generate_constraints
+from initializer.engine.design_system_engine import generate_design_system
+from initializer.engine.risk_engine import analyze_risks
+from initializer.engine.architeture_diagram_engine import (
+    generate_architecture_diagram,
+)
 from initializer.engine.story_engine import generate_stories
 
 from initializer.ai.refine_engine import refine_spec
+
+from initializer.renderers.constraints_renderer import write_constraints
+from initializer.renderers.design_system_renderer import write_design_system
+from initializer.renderers.risks_renderer import write_risks
+from initializer.renderers.architecture_diagram_renderer import (
+    write_architecture_diagram,
+)
 
 from initializer.validation.prd_validator import validate_prd
 from initializer.validation.story_coverage import check_story_coverage
@@ -129,20 +143,42 @@ def write_stories(path, spec):
             f.write(content)
 
 
-def build_initial_spec(prompt):
+def write_downstream_artifacts(path, spec):
 
-    archetype = detect_archetype(prompt)
+    write_constraints(path, spec["constraints"])
+    write_design_system(path, spec["design_system"])
+    write_risks(path, spec["risks"])
+    write_architecture_diagram(path, spec["diagram"])
+
+
+def build_initial_spec(prompt):
+    archetype_data = detect_archetype(prompt)
 
     spec = {
         "prompt": prompt,
-        "archetype": archetype,
-        "stack": archetype["stack"],
-        "features": archetype["features"],
-        "capabilities": [],
+        "archetype": archetype_data["id"],
+        "archetype_data": archetype_data,
+        "stack": archetype_data["stack"],
+        "features": archetype_data["features"],
+        "capabilities": archetype_data.get("capabilities", []),
         "architecture": {},
         "stories": [],
-        "answers": {}
+        "answers": {},
     }
+
+    return spec
+
+
+def derive_capabilities_from_answers(spec):
+    return derive_capabilities_for_spec(spec)
+
+
+def derive_downstream_artifacts(spec):
+
+    spec["constraints"] = generate_constraints(spec)
+    spec["design_system"] = generate_design_system(spec)
+    spec["risks"] = analyze_risks(spec)
+    spec["diagram"] = generate_architecture_diagram(spec)
 
     return spec
 
@@ -189,6 +225,8 @@ def run_new_project(spec_path=None):
 
     spec["answers"] = answers
 
+    spec = derive_capabilities_from_answers(spec)
+
     spec = apply_capabilities(spec)
 
     spec = apply_knowledge(spec)
@@ -198,6 +236,8 @@ def run_new_project(spec_path=None):
     spec["stories"] = generate_stories(spec)
 
     spec = refine_spec(spec)
+
+    spec = derive_downstream_artifacts(spec)
 
     errors = validate_prd(spec)
 
@@ -226,6 +266,8 @@ def run_new_project(spec_path=None):
     write_architecture(output_dir / "architecture.md", spec)
 
     write_stories(output_dir, spec)
+
+    write_downstream_artifacts(output_dir, spec)
 
     print("\nProject generated successfully.\n")
 

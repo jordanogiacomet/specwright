@@ -1,41 +1,33 @@
-from copy import deepcopy
+"""
+Capability Engine
+
+Applies capability handlers that modify architecture and stories.
+"""
+
+from initializer.engine.capability_derivation import normalize_capabilities
 from initializer.engine.capability_registry import CAPABILITY_REGISTRY
 
 
-def detect_capabilities(spec):
-
-    answers = spec.get("answers", {})
-
-    capabilities = []
-
-    if answers.get("public_site"):
-        capabilities.append("public-site")
-
-    if answers.get("scheduled_publishing"):
-        capabilities.append("scheduled-jobs")
-
-    if answers.get("localization"):
-        capabilities.append("i18n")
-
-    capabilities.append("cms")
-
-    return capabilities
-
-
 def apply_capabilities(spec):
+    architecture = dict(spec.get("architecture") or {})
+    stories = list(spec.get("stories") or [])
 
-    capabilities = detect_capabilities(spec)
+    if "decisions" not in architecture:
+        architecture["decisions"] = []
 
-    architecture = deepcopy(spec["architecture"])
-    stories = deepcopy(spec["stories"])
+    if "components" not in architecture:
+        architecture["components"] = []
+
+    capabilities = normalize_capabilities(spec.get("capabilities", []))
+    spec["capabilities"] = capabilities
 
     for capability in capabilities:
+        handler = CAPABILITY_REGISTRY.get(capability)
 
-        if capability not in CAPABILITY_REGISTRY:
-            continue
+        if handler:
+            architecture, stories = handler(architecture, stories)
 
-        handler = CAPABILITY_REGISTRY[capability]
+    spec["architecture"] = architecture
+    spec["stories"] = stories
 
-        architecture, stories = handler(architecture, stories)
-
-    return architecture, stories, capabilities
+    return spec

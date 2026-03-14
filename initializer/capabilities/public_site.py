@@ -16,7 +16,7 @@ def apply_public_site(architecture, stories):
         {
             "id": f"ST-{len(stories)+1:03}",
             "title": "Configure CDN",
-            "description": "Configure CDN for public asset delivery.",
+            "description": "Configure CDN for public site asset delivery.",
         }
     )
 

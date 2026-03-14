@@ -5,6 +5,15 @@ Generates Mermaid architecture diagrams from synthesized architecture.
 """
 
 
+def _first_present(node_ids, *candidates):
+
+    for candidate in candidates:
+        if candidate in node_ids:
+            return candidate
+
+    return None
+
+
 def generate_architecture_diagram(spec):
 
     architecture = spec.get("architecture", {})
@@ -26,19 +35,29 @@ def generate_architecture_diagram(spec):
     # naive connections
     # (later this can become smarter)
 
-    node_ids = [n[0] for n in nodes]
+    node_ids = {node_id for node_id, _ in nodes}
 
-    if "frontend" in node_ids and "cms" in node_ids:
-        edges.append(("frontend", "cms"))
+    frontend = _first_present(node_ids, "frontend")
+    application = _first_present(node_ids, "api", "cms")
+    database = _first_present(node_ids, "database")
+    object_storage = _first_present(node_ids, "object_storage")
+    worker = _first_present(node_ids, "worker")
+    cdn = _first_present(node_ids, "cdn")
 
-    if "cms" in node_ids and "database" in node_ids:
-        edges.append(("cms", "database"))
+    def add_edge(source, target):
+        if not source or not target:
+            return
 
-    if "worker" in node_ids and "database" in node_ids:
-        edges.append(("worker", "database"))
+        edge = (source, target)
 
-    if "frontend" in node_ids and "cdn" in node_ids:
-        edges.append(("cdn", "frontend"))
+        if edge not in edges:
+            edges.append(edge)
+
+    add_edge(frontend, application)
+    add_edge(application, database)
+    add_edge(application, object_storage)
+    add_edge(worker, database)
+    add_edge(cdn, frontend)
 
     diagram = {
         "nodes": nodes,

@@ -3,6 +3,9 @@ from pathlib import Path
 
 import jsonschema
 
+from initializer.validation.prd_validator import validate_prd
+from initializer.validation.story_coverage import check_story_coverage
+
 
 def load_json(path: Path):
     with open(path, encoding="utf-8") as f:
@@ -11,6 +14,93 @@ def load_json(path: Path):
 
 def validate_schema(data, schema):
     jsonschema.validate(instance=data, schema=schema)
+
+
+def find_existing_path(root: Path, filenames: list[str]) -> Path | None:
+    for filename in filenames:
+        path = root / filename
+
+        if path.exists():
+            return path
+
+    return None
+
+
+def find_semantic_schema_path(root: Path) -> Path | None:
+    candidates = [
+        root / "schemas" / "semantic-spec.schema.json",
+        Path(__file__).resolve().parents[2] / "schemas" / "semantic-spec.schema.json",
+    ]
+
+    for path in candidates:
+        if path.exists():
+            return path
+
+    return None
+
+
+def validate_current_spec(root: Path, errors: list[str]) -> bool:
+    spec_path = root / "spec.json"
+
+    if not spec_path.exists():
+        return False
+
+    print("Checking spec.json")
+
+    try:
+        spec = load_json(spec_path)
+        spec_errors = validate_prd(spec)
+        coverage_errors = check_story_coverage(spec)
+
+        if spec_errors or coverage_errors:
+            print("✗ spec.json invalid")
+
+            for error in spec_errors:
+                print(" -", error)
+
+            for capability in coverage_errors:
+                print(f" - Missing story coverage for capability: {capability}")
+
+            errors.append("spec")
+        else:
+            print("✓ spec.json valid")
+
+    except Exception as e:
+        print("✗ spec.json invalid")
+        print(e)
+        errors.append("spec")
+
+    return True
+
+
+def validate_semantic_spec(root: Path, errors: list[str]) -> bool:
+    semantic_spec_path = find_existing_path(
+        root,
+        ["semantic-spec.json", "semantic_spec.json"],
+    )
+
+    if semantic_spec_path is None:
+        return False
+
+    print(f"Checking {semantic_spec_path.name}")
+
+    try:
+        spec = load_json(semantic_spec_path)
+        schema_path = find_semantic_schema_path(root)
+
+        if schema_path is not None:
+            schema = load_json(schema_path)
+            validate_schema(spec, schema)
+            print(f"✓ {semantic_spec_path.name} valid")
+        else:
+            print("⚠ semantic-spec.schema.json not found")
+
+    except Exception as e:
+        print(f"✗ {semantic_spec_path.name} invalid")
+        print(e)
+        errors.append("semantic_spec")
+
+    return True
 
 
 def run_validate_project(path: str) -> int:
@@ -24,42 +114,17 @@ def run_validate_project(path: str) -> int:
     print()
 
     errors = []
+    checked_any = False
 
-    schema_dir = root / "schemas"
-
-    semantic_schema_path = schema_dir / "semantic-spec.schema.json"
-
-    semantic_spec_path = root / "semantic_spec.json"
-
-    if semantic_spec_path.exists():
-
-        print("Checking semantic_spec.json")
-
-        try:
-            spec = load_json(semantic_spec_path)
-
-            if semantic_schema_path.exists():
-
-                schema = load_json(semantic_schema_path)
-
-                validate_schema(spec, schema)
-
-                print("✓ semantic_spec.json valid")
-
-            else:
-                print("⚠ semantic-spec.schema.json not found")
-
-        except Exception as e:
-            print("✗ semantic_spec.json invalid")
-            print(e)
-            errors.append("semantic_spec")
-
-    else:
-        print("⚠ semantic_spec.json not found")
+    if validate_current_spec(root, errors):
+        checked_any = True
+    elif validate_semantic_spec(root, errors):
+        checked_any = True
 
     prd_json_path = root / "prd.json"
 
     if prd_json_path.exists():
+        checked_any = True
 
         print("Checking prd.json")
 
@@ -72,8 +137,9 @@ def run_validate_project(path: str) -> int:
             print(e)
             errors.append("prd_json")
 
-    else:
-        print("⚠ prd.json not found")
+    if not checked_any:
+        print("⚠ No known spec artifact found")
+        errors.append("artifacts")
 
     if errors:
 

@@ -1,14 +1,6 @@
+from initializer.engine.archetype_engine import detect_archetype as detect_canonical_archetype
+
+
 def detect_archetype(prompt: str):
 
-    text = prompt.lower()
-
-    if "cms" in text or "editorial" in text:
-        return "editorial-cms"
-
-    if "api" in text:
-        return "api-service"
-
-    if "saas" in text:
-        return "saas-app"
-
-    return "editorial-cms"
+    return detect_canonical_archetype(prompt)

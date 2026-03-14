@@ -3,11 +3,13 @@ pyproject.toml
 initializer/__init__.py
 initializer/__main__.py
 initializer/cli.py
+initializer/test_prd_scoring.py
 initializer/ai/__init__.py
 initializer/ai/architecture_review.py
 initializer/ai/client.py
 initializer/ai/discovery_agent.py
 initializer/ai/prd_review.py
+initializer/ai/prd_scorer.py
 initializer/ai/refine_engine.py
 initializer/capabilities/__init__.py
 initializer/capabilities/cms.py
