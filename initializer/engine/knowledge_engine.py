@@ -1,84 +1,81 @@
 """
 Knowledge Engine
 
-Injects domain knowledge, patterns, libraries and scaling strategies
-based on archetype and capabilities.
+Adds domain knowledge and architectural best practices
+based on detected stack, features and archetype.
 """
 
 
-def generate_knowledge(spec):
+def apply_knowledge(spec):
 
-    archetype = spec.get("archetype")
-    capabilities = spec.get("capabilities", [])
+    architecture = spec.get("architecture", {})
 
-    knowledge = {
-        "patterns": [],
-        "recommended_libraries": [],
-        "scaling_strategies": [],
-        "pitfalls": [],
-    }
+    decisions = architecture.get("decisions", [])
 
-    # -----------------------------------------
-    # EDITORIAL CMS
-    # -----------------------------------------
+    stack = spec.get("stack", {})
+    features = spec.get("features", [])
 
-    if archetype == "editorial-cms":
+    frontend = stack.get("frontend")
+    backend = stack.get("backend")
+    database = stack.get("database")
 
-        knowledge["patterns"].extend(
-            [
-                "Use headless CMS architecture.",
-                "Separate content management from public rendering.",
-                "Implement preview mode for unpublished content.",
-            ]
-        )
+    # Frontend knowledge
+    if frontend == "nextjs":
 
-        knowledge["recommended_libraries"].extend(
-            [
-                "Next.js",
-                "Payload CMS",
-                "PostgreSQL",
-            ]
-        )
+        if "Use SSR or ISR for SEO-sensitive pages." not in decisions:
+            decisions.append(
+                "Use SSR or ISR for SEO-sensitive pages."
+            )
 
-        knowledge["scaling_strategies"].extend(
-            [
-                "Use CDN caching for public pages.",
-                "Use Incremental Static Regeneration for high traffic pages.",
-                "Store media in S3-compatible storage.",
-            ]
-        )
+        if "Serve static assets through CDN." not in decisions:
+            decisions.append(
+                "Serve static assets through CDN."
+            )
 
-        knowledge["pitfalls"].extend(
-            [
-                "Content schema changes after launch can cause migration issues.",
-                "Preview rendering must match production rendering.",
-            ]
-        )
+    # Backend knowledge
+    if backend in ["node-api", "payload"]:
 
-    # -----------------------------------------
-    # CAPABILITY KNOWLEDGE
-    # -----------------------------------------
+        if "Implement structured logging." not in decisions:
+            decisions.append(
+                "Implement structured logging."
+            )
 
-    if "scheduled-jobs" in capabilities:
+        if "Add health check endpoints." not in decisions:
+            decisions.append(
+                "Add health check endpoints."
+            )
 
-        knowledge["patterns"].append(
-            "Background job queues should be idempotent."
-        )
+    # Database knowledge
+    if database == "postgres":
 
-        knowledge["recommended_libraries"].append(
-            "BullMQ / Redis queues"
-        )
+        if "Use connection pooling." not in decisions:
+            decisions.append(
+                "Use connection pooling."
+            )
 
-    if "public-site" in capabilities:
+        if "Add automated database backups." not in decisions:
+            decisions.append(
+                "Add automated database backups."
+            )
 
-        knowledge["patterns"].append(
-            "Public pages should be cacheable at edge."
-        )
+    # Feature-specific knowledge
 
-    if "i18n" in capabilities:
+    if "scheduled-publishing" in features:
 
-        knowledge["patterns"].append(
-            "Use locale fallback strategies."
-        )
+        if "Introduce background worker for scheduled tasks." not in decisions:
+            decisions.append(
+                "Introduce background worker for scheduled tasks."
+            )
 
-    return knowledge
+    if "media-library" in features:
+
+        if "Store media in S3-compatible object storage." not in decisions:
+            decisions.append(
+                "Store media in S3-compatible object storage."
+            )
+
+    architecture["decisions"] = decisions
+
+    spec["architecture"] = architecture
+
+    return spec

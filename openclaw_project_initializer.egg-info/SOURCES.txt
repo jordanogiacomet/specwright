@@ -5,13 +5,17 @@ initializer/__main__.py
 initializer/cli.py
 initializer/ai/__init__.py
 initializer/ai/architecture_review.py
+initializer/ai/client.py
 initializer/ai/discovery_agent.py
+initializer/ai/prd_review.py
 initializer/ai/refine_engine.py
 initializer/capabilities/__init__.py
 initializer/capabilities/cms.py
 initializer/capabilities/i18n.py
 initializer/capabilities/public_site.py
 initializer/capabilities/scheduled_jobs.py
+initializer/engine/archetype_engine.py
+initializer/engine/architecture_engine.py
 initializer/engine/architeture_diagram_engine.py
 initializer/engine/capability_engine.py
 initializer/engine/capability_registry.py
@@ -20,6 +24,7 @@ initializer/engine/design_system_engine.py
 initializer/engine/knowledge_engine.py
 initializer/engine/prd_intelligence_engine.py
 initializer/engine/risk_engine.py
+initializer/engine/story_engine.py
 initializer/flow/__init__.py
 initializer/flow/archetype_detection.py
 initializer/flow/doctor_project.py
