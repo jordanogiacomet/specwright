@@ -11,12 +11,13 @@ Se outro ChatGPT ou agente for continuar o trabalho daqui, este README serve com
 Leitura honesta do estado do projeto hoje:
 
 - complexidade conceitual: intermediario a avancado
-- maturidade de implementacao: prototipo funcional com pipeline principal operante
+- maturidade de implementacao: MVP tecnico funcional com pipeline principal operante
 - prontidao para producao: baixa a media
 - fluxo mais confiavel: `initializer new`
 - principal cenario validado: `editorial-cms` com admin + public site
+- confianca atual do fluxo principal: melhor do que no inicio da iteracao, com cobertura automatizada no repositorio para unit, integration, e2e e regression
 
-O projeto ja tem uma ideia forte e uma modelagem de dominio clara, mas ainda convive com partes ativas e partes legadas/parciais. O foco correto nao e redesign, e sim consolidacao de contratos.
+O projeto ja tem uma ideia forte e uma modelagem de dominio clara, mas ainda convive com partes ativas e partes legadas/parciais. O foco correto nao e redesign, e sim consolidacao de contratos e reducao de drift entre o caminho principal e os caminhos secundarios.
 
 ## O que este projeto e
 
@@ -177,6 +178,20 @@ Campo opcional quando o modo assistido por IA esta ligado:
 
 - `discovery`
 
+Campos relevantes dentro de `discovery` no estado atual:
+
+- `decision_signals`
+- `additional_questions`
+- `followup_answers`
+- `assumptions`
+- `open_questions`
+- `deployment_considerations`
+- `conflicts`
+- `applied_answer_updates`
+- `applied_capability_candidates`
+- `removed_capabilities`
+- `applied_feature_candidates`
+
 ## Fluxo ativo confirmado no codigo
 
 O entrypoint principal e:
@@ -195,8 +210,9 @@ Subcomandos expostos:
 Observacao importante:
 
 - `new` e o caminho principal e o mais alinhado com a pipeline atual
-- `new --assist` ativa a descoberta assistida por IA
+- `new --assist` ativa uma descoberta assistida por IA com possivel rodada de perguntas adicionais
 - `plan`, `doctor` e partes da camada `runtime/` ainda exigem cautela porque nao estao no mesmo nivel de alinhamento do fluxo principal
+- `validate` e o comando correto para checar `spec.json` gerado pelo fluxo atual
 - `validate` depende de `jsonschema` instalado no ambiente
 
 O caminho realmente confirmado e alinhado com a pipeline principal hoje e o `new`.
@@ -214,16 +230,18 @@ Pipeline real de `initializer new`:
 2. chama `build_initial_spec(prompt)`
 3. `build_initial_spec()` chama `detect_archetype(prompt)`
 4. coleta respostas estruturadas do usuario
-5. opcionalmente roda uma descoberta assistida por IA se `--assist` estiver ligado
-6. deriva capabilities a partir de `archetype_data`, `spec["archetype"]` e `spec["answers"]`
-7. aplica handlers de capability
-8. aplica conhecimento arquitetural adicional
-9. gera arquitetura consolidada
-10. gera stories consolidadas
-11. refina o spec
-12. deriva `constraints`, `design_system`, `risks` e `diagram`
-13. roda validacao estrutural e checagem de cobertura de stories
-14. escreve artefatos em `output/<project_slug>/`
+5. opcionalmente roda uma primeira passada de descoberta assistida por IA se `--assist` estiver ligado
+6. se a descoberta retornar perguntas adicionais, coleta respostas estruturadas de follow-up
+7. se houver respostas de follow-up, roda uma segunda passada de descoberta com o contexto enriquecido
+8. deriva capabilities a partir de `archetype_data`, `spec["archetype"]`, `spec["answers"]` e sinais de descoberta
+9. aplica handlers de capability
+10. aplica conhecimento arquitetural adicional
+11. gera arquitetura consolidada
+12. gera stories consolidadas
+13. refina o spec
+14. deriva `constraints`, `design_system`, `risks` e `diagram`
+15. roda validacao estrutural e checagem de cobertura de stories
+16. escreve artefatos em `output/<project_slug>/`
 
 ## Perguntas do CLI no fluxo `new`
 
@@ -315,16 +333,18 @@ Objetivo desse passo:
 
 - enriquecer respostas
 - sugerir capabilities candidatas validas
-- registrar `assumptions`, `open_questions` e `additional_questions`
-- fazer isso sem substituir o `spec` canonico
+- sugerir features candidatas validas
+- produzir `decision_signals` estruturados
+- registrar `assumptions`, `open_questions`, `additional_questions`, `deployment_considerations` e `conflicts`
+- fazer isso sem substituir o `spec` canonico de maneira arbitraria
 
 Regras importantes desse merge:
 
 - nao reescreve `archetype`
-- nao reescreve `archetype_data`
 - nao reescreve `stack`
-- nao reescreve `features`
-- so enriquece `answers`, `capabilities` e `discovery`
+- preserva `archetype_data` como referencia principal
+- pode enriquecer `answers`, `capabilities`, `features` e `discovery` de forma conservadora
+- pode reconciliar capabilities quando os `decision_signals` ou respostas de follow-up contradizem inferencias anteriores
 
 Dependencias e ambiente:
 
@@ -332,7 +352,14 @@ Dependencias e ambiente:
 - usa `OPENAI_API_KEY`
 - o cliente atual usa `gpt-4.1-mini` para essa passada de descoberta
 
-Esse modo deve ser entendido como camada auxiliar e conservadora, nao como fonte principal da verdade do projeto.
+Comportamento interativo atual:
+
+- a primeira passada pode retornar objetos de pergunta estruturados
+- o CLI coleta essas respostas no terminal
+- as respostas ficam em `discovery.followup_answers`
+- se houve respostas novas, a descoberta e executada novamente antes da derivacao final
+
+Esse modo deve ser entendido como camada auxiliar e conservadora, nao como fonte principal isolada da verdade do projeto.
 
 ## Engines principais e papeis reais
 
@@ -449,6 +476,7 @@ Resultado esperado de alto nivel no fluxo ativo:
 
 - `initializer new`
 - `initializer new --assist` quando ha `OPENAI_API_KEY` e a equipe quer enriquecer a descoberta sem abrir mao do contrato canonico
+- `initializer validate output/<slug>` para validar `spec.json` do fluxo atual
 - `build_initial_spec()`
 - `detect_archetype()`
 - derivacao explicita de capabilities
@@ -509,6 +537,8 @@ Diretorios mais importantes:
   - caminho alternativo para semantic spec
 - `initializer/synthesis/`
   - fluxo mais antigo de sintese
+- `tests/`
+  - cobertura automatizada organizada em `unit`, `integration`, `e2e` e `regression`
 - `output/`
   - artefatos gerados e exemplos de referencia
 - `contracts/` e `schemas/`
@@ -535,12 +565,44 @@ Se voce estiver continuando este projeto, siga estas regras:
 6. Registre descobertas e mudancas em `progress.txt`.
 7. Nao faca refatoracoes largas sem antes explicar qual contrato existente esta quebrado.
 
+## Testes e validacao
+
+O repositorio agora contem uma suite de testes em:
+
+- `tests/unit/`
+- `tests/integration/`
+- `tests/e2e/`
+- `tests/regression/`
+
+Essa suite cobre, pelo menos no estado atual do repositorio:
+
+- contrato canonico do spec
+- archetype e capability derivation
+- merge de descoberta assistida
+- composicao de arquitetura e stories
+- geracao editorial ponta a ponta
+- validacao de `spec.json`
+- regressions importantes do fluxo editorial
+
+Observacao importante sobre ambiente:
+
+- `pytest` nao esta listado nas dependencias de runtime em `pyproject.toml`
+- para contribuir localmente, trate `pytest` como dependencia de desenvolvimento a instalar manualmente
+- o ultimo registro em `progress.txt` aponta uma suite com 24 testes passando, mas essa afirmacao pertence ao ultimo ciclo validado, nao a qualquer ambiente novo automaticamente
+
 ## Como rodar
 
 Instalacao local recomendada:
 
 ```bash
 python -m pip install -e .
+```
+
+Instalacao recomendada para desenvolvimento com testes:
+
+```bash
+python -m pip install -e .
+python -m pip install pytest
 ```
 
 Ver ajuda:
@@ -567,10 +629,17 @@ Validar um output gerado:
 python -m initializer validate output/<project-slug>
 ```
 
+Rodar a suite de testes:
+
+```bash
+pytest
+```
+
 Observacoes:
 
 - o comando `validate` importa `jsonschema`; se o ambiente nao estiver com as dependencias instaladas, ele vai falhar antes da validacao
 - o modo `--assist` depende de `OPENAI_API_KEY`
+- a suite local depende de `pytest`
 
 ## O que um outro ChatGPT deve lembrar em uma frase
 
