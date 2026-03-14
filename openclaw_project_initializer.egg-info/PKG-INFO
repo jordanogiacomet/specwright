@@ -8,13 +8,25 @@ Requires-Dist: jsonschema
 Requires-Dist: pyyaml
 Requires-Dist: openai
 
-# Initializer
+# OpenClaw Project Initializer
 
 Este repositorio implementa um inicializador de projetos orientado por PRD.
 
 Hoje ele deve ser entendido como um projeto em modo de diagnostico e alinhamento interno, nao como um gerador finalizado ou como uma aplicacao de producao. O objetivo desta iteracao e preservar a ideia principal do produto enquanto reduz inconsistencias de contrato entre os engines, o fluxo de CLI e os artefatos gerados.
 
 Se outro ChatGPT ou agente for continuar o trabalho daqui, este README serve como mapa rapido do que o projeto e, do que realmente esta ativo no codigo, e de quais regras conceituais nao podem ser quebradas.
+
+## Maturidade atual
+
+Leitura honesta do estado do projeto hoje:
+
+- complexidade conceitual: intermediario a avancado
+- maturidade de implementacao: prototipo funcional com pipeline principal operante
+- prontidao para producao: baixa a media
+- fluxo mais confiavel: `initializer new`
+- principal cenario validado: `editorial-cms` com admin + public site
+
+O projeto ja tem uma ideia forte e uma modelagem de dominio clara, mas ainda convive com partes ativas e partes legadas/parciais. O foco correto nao e redesign, e sim consolidacao de contratos.
 
 ## O que este projeto e
 
@@ -23,9 +35,10 @@ A ideia central do repositorio e:
 1. receber uma descricao textual de projeto via CLI
 2. detectar um `archetype`
 3. derivar `stack`, `features` e `capabilities`
-4. sintetizar um `spec` canonico em memoria
-5. gerar artefatos como PRD, arquitetura, stories e documentos derivados
-6. validar e refinar o resultado
+4. opcionalmente enriquecer a descoberta com uma passada assistida por IA
+5. sintetizar um `spec` canonico em memoria
+6. gerar artefatos como PRD, arquitetura, stories e documentos derivados
+7. validar e refinar o resultado
 
 O produto a preservar e um `PRD-driven project initializer`.
 
@@ -170,6 +183,10 @@ Campos derivados que o fluxo `new` atual tambem popula:
 - `risks`
 - `diagram`
 
+Campo opcional quando o modo assistido por IA esta ligado:
+
+- `discovery`
+
 ## Fluxo ativo confirmado no codigo
 
 O entrypoint principal e:
@@ -184,6 +201,13 @@ Subcomandos expostos:
 - `refine`
 - `doctor`
 - `validate`
+
+Observacao importante:
+
+- `new` e o caminho principal e o mais alinhado com a pipeline atual
+- `new --assist` ativa a descoberta assistida por IA
+- `plan`, `doctor` e partes da camada `runtime/` ainda exigem cautela porque nao estao no mesmo nivel de alinhamento do fluxo principal
+- `validate` depende de `jsonschema` instalado no ambiente
 
 O caminho realmente confirmado e alinhado com a pipeline principal hoje e o `new`.
 
@@ -200,15 +224,16 @@ Pipeline real de `initializer new`:
 2. chama `build_initial_spec(prompt)`
 3. `build_initial_spec()` chama `detect_archetype(prompt)`
 4. coleta respostas estruturadas do usuario
-5. deriva capabilities a partir de `archetype_data`, `spec["archetype"]` e `spec["answers"]`
-6. aplica handlers de capability
-7. aplica conhecimento arquitetural adicional
-8. gera arquitetura consolidada
-9. gera stories consolidadas
-10. refina o spec
-11. deriva `constraints`, `design_system`, `risks` e `diagram`
-12. roda validacao estrutural e checagem de cobertura de stories
-13. escreve artefatos em `output/<project_slug>/`
+5. opcionalmente roda uma descoberta assistida por IA se `--assist` estiver ligado
+6. deriva capabilities a partir de `archetype_data`, `spec["archetype"]` e `spec["answers"]`
+7. aplica handlers de capability
+8. aplica conhecimento arquitetural adicional
+9. gera arquitetura consolidada
+10. gera stories consolidadas
+11. refina o spec
+12. deriva `constraints`, `design_system`, `risks` e `diagram`
+13. roda validacao estrutural e checagem de cobertura de stories
+14. escreve artefatos em `output/<project_slug>/`
 
 ## Perguntas do CLI no fluxo `new`
 
@@ -229,6 +254,13 @@ Valores estruturados atuais:
 - `deploy_target`
   - `docker`
   - `docker_and_k8s_later`
+
+Flags atualmente expostas em `initializer new`:
+
+- `--assist`
+  - habilita descoberta assistida por IA antes da derivacao final do spec
+- `--spec`
+  - existe no CLI, mas hoje nao e o centro do fluxo interativo principal e deve ser tratado com cautela
 
 ## Derivacao atual de archetype, features e capabilities
 
@@ -280,6 +312,37 @@ Derivacoes suportadas pelo motor, mas nao expostas diretamente no questionario a
 - `i18n`
 
 Essas duas ainda dependem de respostas mais ricas no `answers` ou de um `spec` alimentado por outro caminho.
+
+## Descoberta assistida por IA
+
+O fluxo principal agora tem um passo opcional de descoberta assistida:
+
+- implementado em `initializer/ai/discovery_engine.py`
+- consolidado em `initializer/ai/discovery_merge.py`
+- ativado por `initializer new --assist`
+
+Objetivo desse passo:
+
+- enriquecer respostas
+- sugerir capabilities candidatas validas
+- registrar `assumptions`, `open_questions` e `additional_questions`
+- fazer isso sem substituir o `spec` canonico
+
+Regras importantes desse merge:
+
+- nao reescreve `archetype`
+- nao reescreve `archetype_data`
+- nao reescreve `stack`
+- nao reescreve `features`
+- so enriquece `answers`, `capabilities` e `discovery`
+
+Dependencias e ambiente:
+
+- usa o pacote `openai`
+- usa `OPENAI_API_KEY`
+- o cliente atual usa `gpt-4.1-mini` para essa passada de descoberta
+
+Esse modo deve ser entendido como camada auxiliar e conservadora, nao como fonte principal da verdade do projeto.
 
 ## Engines principais e papeis reais
 
@@ -341,6 +404,13 @@ O fluxo `new` atual tambem chama:
 
 Esses engines alimentam documentos adicionais no diretorio de output.
 
+### Camada de IA
+
+Tambem existe uma camada auxiliar em `initializer/ai/` com dois papeis diferentes:
+
+- descoberta assistida para enriquecer entrada sem substituir o spec
+- refinamento heuristico posterior via `refine_engine`
+
 ## Estrutura de saida do fluxo `new`
 
 Para um projeto com slug `my-project`, o fluxo atual escreve:
@@ -388,6 +458,7 @@ Resultado esperado de alto nivel no fluxo ativo:
 ### Fluxo mais confiavel hoje
 
 - `initializer new`
+- `initializer new --assist` quando ha `OPENAI_API_KEY` e a equipe quer enriquecer a descoberta sem abrir mao do contrato canonico
 - `build_initial_spec()`
 - `detect_archetype()`
 - derivacao explicita de capabilities
@@ -412,6 +483,7 @@ Pontos importantes:
 - `initializer/flow/plan_project.py` referencia `collect_input` e `render_decisions` em `initializer.flow.new_project`, mas esses simbolos nao existem hoje nesse modulo
 - `doctor` valida uma estrutura de projeto diferente da que `new` escreve atualmente
 - `validate` depende de `jsonschema`, que esta em `pyproject.toml`, mas precisa estar instalado no ambiente
+- `new` expoe `--spec`, mas o caminho principal continua sendo interativo e o parametro nao aparece como elemento central no fluxo atual
 
 Em outras palavras: o repositorio tem um caminho principal funcional e caminhos secundarios que ainda nao compartilham o mesmo contrato com o mesmo grau de confianca.
 
@@ -493,14 +565,23 @@ Executar o fluxo principal:
 python -m initializer new
 ```
 
+Executar o fluxo principal com descoberta assistida por IA:
+
+```bash
+OPENAI_API_KEY=... python -m initializer new --assist
+```
+
 Validar um output gerado:
 
 ```bash
 python -m initializer validate output/<project-slug>
 ```
 
-Observacao: o comando `validate` importa `jsonschema`. Se o ambiente nao estiver com as dependencias instaladas, ele vai falhar antes da validacao.
+Observacoes:
+
+- o comando `validate` importa `jsonschema`; se o ambiente nao estiver com as dependencias instaladas, ele vai falhar antes da validacao
+- o modo `--assist` depende de `OPENAI_API_KEY`
 
 ## O que um outro ChatGPT deve lembrar em uma frase
 
-Este repositorio nao e um scaffold generico: ele e um inicializador orientado por PRD, com pipeline baseada em engines especializadas e um fluxo principal hoje centrado em `initializer new`, devendo ser evoluido por alinhamento de contratos, nao por redesign do produto.
+Este repositorio nao e um scaffold generico: ele e um inicializador orientado por PRD, com pipeline baseada em engines especializadas, um fluxo principal hoje centrado em `initializer new` e uma camada opcional de descoberta assistida por IA, devendo ser evoluido por alinhamento de contratos, nao por redesign do produto.

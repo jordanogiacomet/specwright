@@ -1,5 +1,5 @@
 {
-  "prompt": "Editorial CMS with admin and public site and scheduled publishing",
+  "prompt": "cms-site-baseline",
   "archetype": "editorial-cms",
   "archetype_data": {
     "id": "editorial-cms",
@@ -169,11 +169,11 @@
     }
   ],
   "answers": {
-    "project_name": "ST011 Downstream Alignment",
-    "project_slug": "st011-downstream-alignment",
-    "summary": "Downstream alignment validation run",
+    "project_name": "cms site baseline",
+    "project_slug": "cms-site-baseline",
+    "summary": "cms site for my clients",
     "surface": "admin_plus_public_site",
-    "deploy_target": "docker"
+    "deploy_target": "docker_and_k8s_later"
   },
   "constraints": {
     "performance": [
@@ -192,8 +192,7 @@
     ],
     "operational": [
       "Application must support environment-based configuration.",
-      "Structured logging should be used for all backend services.",
-      "Application must run in containerized environments."
+      "Structured logging should be used for all backend services."
     ]
   },
   "design_system": {

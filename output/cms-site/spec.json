@@ -1,5 +1,5 @@
 {
-  "prompt": "Editorial CMS with admin panel, public website, media library, preview, and scheduled publishing for articles",
+  "prompt": "cms site",
   "archetype": "editorial-cms",
   "archetype_data": {
     "id": "editorial-cms",
@@ -169,11 +169,46 @@
     }
   ],
   "answers": {
-    "project_name": "Editorial E2E Test",
-    "project_slug": "editorial-e2e-test",
-    "summary": "Editorial validation run",
+    "project_name": "cms site",
+    "project_slug": "cms-site",
+    "summary": "site for my clients",
     "surface": "admin_plus_public_site",
-    "deploy_target": "docker"
+    "deploy_target": "docker_and_k8s_later"
+  },
+  "discovery": {
+    "assisted": true,
+    "assumptions": [
+      "The deployment target 'docker_and_k8s_later' implies an initial focus on Docker with a potential later migration or expansion to Kubernetes.",
+      "The 'surface' value 'admin_plus_public_site' indicates the project will include both an administrative interface and a public-facing website.",
+      "The stack technologies (Payload backend, Postgres database, Next.js frontend) are assumed to be compatible with the editorial CMS archetype and its features."
+    ],
+    "open_questions": [
+      "What specific content types or modules will the CMS need to support beyond the archetype's default editorial capability?",
+      "Are there any specific integrations or third-party services required for authentication or media management?",
+      "What are the expected scalability or performance requirements for the site when deployed with Docker and later Kubernetes?",
+      "Is there a preferred hosting environment or cloud provider for deployment?",
+      "Are there any specific compliance, accessibility, or internationalization requirements for the site?"
+    ],
+    "additional_questions": [
+      "Could you clarify the timeline or priority for implementing Kubernetes deployment after Docker?",
+      "Do you require multi-language support for the public site content?",
+      "Are there custom role definitions or permission schemes needed beyond the default roles feature?",
+      "Is there a need for offline or mobile-first capabilities for the admin interface?",
+      "Would you like integration of any analytics or tracking tools for the public site?"
+    ],
+    "capability_candidates": [
+      "cms",
+      "docker",
+      "kubernetes",
+      "authentication",
+      "roles",
+      "media-library",
+      "draft-publish",
+      "preview",
+      "scheduled-publishing",
+      "admin-interface",
+      "public-website"
+    ]
   },
   "constraints": {
     "performance": [
@@ -192,8 +227,7 @@
     ],
     "operational": [
       "Application must support environment-based configuration.",
-      "Structured logging should be used for all backend services.",
-      "Application must run in containerized environments."
+      "Structured logging should be used for all backend services."
     ]
   },
   "design_system": {

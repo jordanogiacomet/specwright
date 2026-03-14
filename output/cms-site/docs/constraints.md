@@ -21,4 +21,3 @@
 
 - Application must support environment-based configuration.
 - Structured logging should be used for all backend services.
-- Application must run in containerized environments.
