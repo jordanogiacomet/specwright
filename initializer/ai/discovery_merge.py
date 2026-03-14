@@ -147,7 +147,13 @@ def _word_tokens(value: str) -> set[str]:
 
 def _extract_followup_signals(spec: dict[str, Any]) -> dict[str, Any]:
     """Extract signal values that have been explicitly confirmed by the
-    user via followup answers.  These are 'confirmed' signals."""
+    user via followup answers.  These are 'confirmed' signals.
+
+    Special handling for core_work_features: if the user answered a
+    boolean question mapped to this signal_key, the value is True/False
+    rather than a list of features.  In this case we skip it — a boolean
+    cannot meaningfully replace or represent a list of domain features.
+    """
     discovery = spec.get("discovery", {})
     if not isinstance(discovery, dict):
         return {}
@@ -165,8 +171,25 @@ def _extract_followup_signals(spec: dict[str, Any]) -> dict[str, Any]:
         signal_key = answer_data.get("signal_key")
         value = answer_data.get("value")
 
-        if isinstance(signal_key, str) and signal_key.strip():
-            extracted[signal_key.strip()] = value
+        if not isinstance(signal_key, str) or not signal_key.strip():
+            continue
+
+        sk = signal_key.strip()
+
+        # core_work_features must be a list — skip booleans/strings
+        if sk == "core_work_features":
+            if isinstance(value, list):
+                normalized = [
+                    item.strip().lower()
+                    for item in value
+                    if isinstance(item, str) and item.strip()
+                ]
+                if normalized:
+                    extracted[sk] = normalized
+            # If boolean or string, skip — don't overwrite with non-list
+            continue
+
+        extracted[sk] = value
 
     return extracted
 
@@ -606,8 +629,13 @@ def _merge_decision_signals(
             inferred_signals[key] = value
         # If user has confirmed, skip the AI value
 
-    # Confirmed signals always win
+    # Confirmed signals always win — except when a boolean would
+    # overwrite a list (e.g. core_work_features)
     for key, value in confirmed_signals.items():
+        if key == "core_work_features" and not isinstance(value, list):
+            # A boolean "yes" for core_work_features is not a valid
+            # replacement for a list — skip it
+            continue
         effective[key] = value
 
     effective = _coerce_decision_signals(effective)
