@@ -243,7 +243,9 @@ def _prompt_question_answer(question: dict[str, Any]) -> tuple[str, Any, str]:
 
 
 def _unique_question_objects(questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen = set()
+    """Deduplicate questions by both id and signal_key."""
+    seen_ids: set[str] = set()
+    seen_signal_keys: set[str] = set()
     unique: list[dict[str, Any]] = []
 
     for question in questions:
@@ -259,10 +261,18 @@ def _unique_question_objects(questions: list[dict[str, Any]]) -> list[dict[str, 
         if not isinstance(question_text, str) or not question_text.strip():
             continue
 
-        if question_id in seen:
+        if question_id in seen_ids:
             continue
 
-        seen.add(question_id)
+        # Deduplicate by signal_key as well
+        signal_key = question.get("signal_key")
+        if isinstance(signal_key, str) and signal_key.strip():
+            sk = signal_key.strip()
+            if sk in seen_signal_keys:
+                continue
+            seen_signal_keys.add(sk)
+
+        seen_ids.add(question_id)
         unique.append(question)
 
     return unique

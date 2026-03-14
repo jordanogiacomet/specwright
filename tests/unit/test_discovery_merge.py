@@ -51,7 +51,7 @@ def test_merge_assisted_discovery_updates_allowed_answers_and_preserves_core_fie
     assert merged["features"] == ["authentication", "preview"]
 
     assert merged["answers"]["project_name"] == "Editorial Project"
-    assert merged["answers"]["surface"] == "admin_plus_public_site"
+    assert merged["answers"]["surface"] == "internal_admin_only"
     assert merged["answers"]["tenant_model"] == "single_tenant"
     assert "unknown_field" not in merged["answers"]
     assert "archetype" not in merged["answers"]

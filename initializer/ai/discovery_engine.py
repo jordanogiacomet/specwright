@@ -129,6 +129,7 @@ def build_discovery_instructions() -> str:
         "- Do not invent implementation details without evidence.\n"
         "- Preserve explicit user answers over prior inference.\n"
         "- Negative evidence matters: if the user says 'no CMS', do not keep CMS implied.\n"
+        "- Conservative on public-site: do not assume a public-facing site unless the user confirms it.\n"
         "\n"
         "You must return JSON only.\n"
         "\n"
@@ -152,6 +153,7 @@ def build_discovery_instructions() -> str:
         "  - choices: optional array, only for enum\n"
         "  - signal_key: optional string when the answer should map into decision_signals\n"
         "- Do not repeat questions already answered in followup_answers.\n"
+        "- Do not repeat questions whose signal_key has already been answered.\n"
         "- Prefer product-shape questions before architecture questions.\n"
         "\n"
         "Rules for decision_signals:\n"
@@ -161,6 +163,8 @@ def build_discovery_instructions() -> str:
         "  app_shape: generic-web-app | internal-work-organizer | client-portal | content-platform | backoffice | worker-pipeline | knowledge-base | ecommerce | marketplace | unknown\n"
         "- Supported list keys:\n"
         "  core_work_features\n"
+        "- IMPORTANT: Only set boolean signals to true when there is explicit evidence.\n"
+        "  If you are unsure, leave the signal out rather than guessing true.\n"
         "\n"
         "Rules for core_work_features:\n"
         "- Use product/domain capabilities, not technical plumbing.\n"
@@ -170,6 +174,7 @@ def build_discovery_instructions() -> str:
         "Rules for capability_candidates:\n"
         "- Allowed capability IDs are: cms, public-site, scheduled-jobs, i18n\n"
         "- Only include a capability if supported by evidence.\n"
+        "- Do NOT include public-site unless the user has explicitly confirmed they need a public-facing site.\n"
         "\n"
         "Rules for feature_candidates:\n"
         "- Use canonical feature IDs when justified.\n"
@@ -338,6 +343,7 @@ def _normalize_decision_signals(value: Any) -> dict[str, Any]:
 
 
 def _answered_question_ids(payload: dict[str, Any]) -> set[str]:
+    """Return question IDs that have already been answered."""
     existing = payload.get("existing_discovery", {})
     if not isinstance(existing, dict):
         return set()
@@ -351,6 +357,58 @@ def _answered_question_ids(payload: dict[str, Any]) -> set[str]:
         for key in followup_answers.keys()
         if isinstance(key, str) and key.strip()
     }
+
+
+def _answered_signal_keys(payload: dict[str, Any]) -> set[str]:
+    """Return signal_keys that have already been answered via followup.
+
+    This is the key addition: deduplication by signal_key, not just by
+    question id.  If the user already answered a question whose
+    signal_key is 'needs_cms', any new question with the same
+    signal_key should be suppressed regardless of its id.
+    """
+    existing = payload.get("existing_discovery", {})
+    if not isinstance(existing, dict):
+        return set()
+
+    followup_answers = existing.get("followup_answers", {})
+    if not isinstance(followup_answers, dict):
+        return set()
+
+    signal_keys: set[str] = set()
+    for _, answer_data in followup_answers.items():
+        if not isinstance(answer_data, dict):
+            continue
+        sk = answer_data.get("signal_key")
+        if isinstance(sk, str) and sk.strip():
+            signal_keys.add(sk.strip())
+
+    return signal_keys
+
+
+def _confirmed_signal_values(payload: dict[str, Any]) -> dict[str, Any]:
+    """Extract signal values that have been explicitly confirmed by the user
+    via followup answers.  These are 'confirmed' signals — they take
+    precedence over AI-inferred signals.
+    """
+    existing = payload.get("existing_discovery", {})
+    if not isinstance(existing, dict):
+        return {}
+
+    followup_answers = existing.get("followup_answers", {})
+    if not isinstance(followup_answers, dict):
+        return {}
+
+    confirmed: dict[str, Any] = {}
+    for _, answer_data in followup_answers.items():
+        if not isinstance(answer_data, dict):
+            continue
+        signal_key = answer_data.get("signal_key")
+        value = answer_data.get("value")
+        if isinstance(signal_key, str) and signal_key.strip():
+            confirmed[signal_key.strip()] = value
+
+    return confirmed
 
 
 def _existing_signal_values(payload: dict[str, Any]) -> dict[str, Any]:
@@ -369,17 +427,68 @@ def _question_ids(questions: list[AssistedDiscoveryQuestion]) -> set[str]:
     return {question.id for question in questions}
 
 
+def _question_signal_keys(questions: list[AssistedDiscoveryQuestion]) -> set[str]:
+    """Collect signal_keys already present in a question list."""
+    keys: set[str] = set()
+    for question in questions:
+        if question.signal_key:
+            keys.add(question.signal_key)
+    return keys
+
+
 def _append_question_if_missing(
     questions: list[AssistedDiscoveryQuestion],
     existing_ids: set[str],
     answered_ids: set[str],
+    answered_skeys: set[str],
+    existing_skeys: set[str],
     question: AssistedDiscoveryQuestion,
 ):
+    """Append a question only if neither its id nor its signal_key have
+    been answered or already queued."""
     if question.id in existing_ids or question.id in answered_ids:
         return
 
+    # Deduplicate by signal_key: if a question with the same signal_key
+    # has already been answered OR is already in the question list, skip.
+    if question.signal_key:
+        if question.signal_key in answered_skeys:
+            return
+        if question.signal_key in existing_skeys:
+            return
+
     questions.append(question)
     existing_ids.add(question.id)
+    if question.signal_key:
+        existing_skeys.add(question.signal_key)
+
+
+def _deduplicate_questions_by_signal_key(
+    questions: list[AssistedDiscoveryQuestion],
+    answered_skeys: set[str],
+) -> list[AssistedDiscoveryQuestion]:
+    """Remove questions from the AI result whose signal_key has already
+    been answered.  Also deduplicate questions that share a signal_key
+    among themselves (keep the first one)."""
+    deduped: list[AssistedDiscoveryQuestion] = []
+    seen_ids: set[str] = set()
+    seen_skeys: set[str] = set()
+
+    for question in questions:
+        if question.id in seen_ids:
+            continue
+
+        if question.signal_key:
+            if question.signal_key in answered_skeys:
+                continue
+            if question.signal_key in seen_skeys:
+                continue
+            seen_skeys.add(question.signal_key)
+
+        seen_ids.add(question.id)
+        deduped.append(question)
+
+    return deduped
 
 
 def _augment_questions_from_context(
@@ -387,18 +496,40 @@ def _augment_questions_from_context(
     result: AssistedDiscoveryResult,
 ) -> AssistedDiscoveryResult:
     answered_ids = _answered_question_ids(payload)
+    answered_skeys = _answered_signal_keys(payload)
+
+    # First: deduplicate AI-generated questions by signal_key
+    result.additional_questions = _deduplicate_questions_by_signal_key(
+        result.additional_questions,
+        answered_skeys,
+    )
+
     existing_ids = _question_ids(result.additional_questions)
+    existing_skeys = _question_signal_keys(result.additional_questions)
 
     signals = result.decision_signals
     existing_signal_values = _existing_signal_values(payload)
+    confirmed = _confirmed_signal_values(payload)
 
-    primary_audience = signals.get("primary_audience") or existing_signal_values.get("primary_audience")
-    app_shape = signals.get("app_shape") or existing_signal_values.get("app_shape")
-    needs_public_site = signals.get("needs_public_site")
-    needs_cms = signals.get("needs_cms")
-    needs_i18n = signals.get("needs_i18n")
-    needs_scheduled_jobs = signals.get("needs_scheduled_jobs")
-    core_work_features = signals.get("core_work_features")
+    # Use confirmed values first, then AI signals, then existing signals
+    primary_audience = (
+        confirmed.get("primary_audience")
+        or signals.get("primary_audience")
+        or existing_signal_values.get("primary_audience")
+    )
+    app_shape = (
+        confirmed.get("app_shape")
+        or signals.get("app_shape")
+        or existing_signal_values.get("app_shape")
+    )
+    needs_public_site = confirmed.get("needs_public_site", signals.get("needs_public_site"))
+    needs_cms = confirmed.get("needs_cms", signals.get("needs_cms"))
+    needs_i18n = confirmed.get("needs_i18n", signals.get("needs_i18n"))
+    needs_scheduled_jobs = confirmed.get("needs_scheduled_jobs", signals.get("needs_scheduled_jobs"))
+    core_work_features = (
+        confirmed.get("core_work_features")
+        or signals.get("core_work_features")
+    )
 
     answers = payload.get("answers", {})
     if not isinstance(answers, dict):
@@ -406,24 +537,31 @@ def _augment_questions_from_context(
 
     surface = answers.get("surface")
 
-    _append_question_if_missing(
-        result.additional_questions,
-        existing_ids,
-        answered_ids,
-        AssistedDiscoveryQuestion(
-            id="primary_audience",
-            question="Is the primary audience for this tool internal teams, external clients, or both equally?",
-            answer_type="enum",
-            choices=["internal_teams", "external_clients", "mixed", "unknown"],
-            signal_key="primary_audience",
-        ),
-    ) if primary_audience in (None, "unknown") else None
+    if primary_audience in (None, "unknown"):
+        _append_question_if_missing(
+            result.additional_questions,
+            existing_ids,
+            answered_ids,
+            answered_skeys,
+            existing_skeys,
+            AssistedDiscoveryQuestion(
+                id="primary_audience",
+                question="Is the primary audience for this tool internal teams, external clients, or both equally?",
+                answer_type="enum",
+                choices=["internal_teams", "external_clients", "mixed", "unknown"],
+                signal_key="primary_audience",
+            ),
+        )
 
+    # Always ask about public-site when surface implies it but
+    # user hasn't explicitly confirmed — conservative approach.
     if needs_public_site is None and surface == "admin_plus_public_site":
         _append_question_if_missing(
             result.additional_questions,
             existing_ids,
             answered_ids,
+            answered_skeys,
+            existing_skeys,
             AssistedDiscoveryQuestion(
                 id="needs_public_site",
                 question="Will the application include a public-facing site accessible without authentication?",
@@ -437,6 +575,8 @@ def _augment_questions_from_context(
             result.additional_questions,
             existing_ids,
             answered_ids,
+            answered_skeys,
+            existing_skeys,
             AssistedDiscoveryQuestion(
                 id="needs_cms",
                 question="Does the project need content management capabilities for managing and editing content easily?",
@@ -450,6 +590,8 @@ def _augment_questions_from_context(
             result.additional_questions,
             existing_ids,
             answered_ids,
+            answered_skeys,
+            existing_skeys,
             AssistedDiscoveryQuestion(
                 id="needs_i18n",
                 question="Does the application need to support multiple languages or internationalization?",
@@ -463,6 +605,8 @@ def _augment_questions_from_context(
             result.additional_questions,
             existing_ids,
             answered_ids,
+            answered_skeys,
+            existing_skeys,
             AssistedDiscoveryQuestion(
                 id="needs_scheduled_jobs",
                 question="Will the application require scheduled or background jobs (e.g. notifications, batch processing)?",
@@ -479,6 +623,8 @@ def _augment_questions_from_context(
             result.additional_questions,
             existing_ids,
             answered_ids,
+            answered_skeys,
+            existing_skeys,
             AssistedDiscoveryQuestion(
                 id="core_work_features",
                 question=(

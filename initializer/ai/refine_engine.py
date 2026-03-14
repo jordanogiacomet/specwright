@@ -3,7 +3,16 @@ AI Refine Engine
 
 Improves generated spec using heuristics now
 and AI later.
+
+Key change: CDN recommendation is only added when
+public-site is in the reconciled capabilities list.
 """
+
+
+def _has_public_site(spec):
+    """Check if public-site is in the reconciled capabilities list."""
+    capabilities = spec.get("capabilities", [])
+    return "public-site" in capabilities
 
 
 def refine_prd(spec):
@@ -13,8 +22,10 @@ def refine_prd(spec):
 
     improvements = []
 
-    if "CDN recommended for public assets." not in decisions:
-        improvements.append("CDN recommended for public assets.")
+    # CDN is only relevant for public-facing sites
+    if _has_public_site(spec):
+        if "CDN recommended for public assets." not in decisions:
+            improvements.append("CDN recommended for public assets.")
 
     if "Add monitoring and logging stack." not in decisions:
         improvements.append("Add monitoring and logging stack.")

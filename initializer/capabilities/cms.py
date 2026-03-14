@@ -3,7 +3,7 @@ CMS capability
 """
 
 
-def apply_cms(architecture, stories):
+def apply_cms(spec, architecture, stories):
 
     # garantir estrutura segura
 

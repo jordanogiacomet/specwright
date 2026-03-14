@@ -3,7 +3,17 @@ Knowledge Engine
 
 Adds domain knowledge and architectural best practices
 based on detected stack, features and archetype.
+
+Key change: SSR/ISR and CDN decisions are only added when
+public-site is in the reconciled capabilities list.  For
+internal-only apps using Next.js, these are not relevant.
 """
+
+
+def _has_public_site(spec):
+    """Check if public-site is in the reconciled capabilities list."""
+    capabilities = spec.get("capabilities", [])
+    return "public-site" in capabilities
 
 
 def apply_knowledge(spec):
@@ -19,18 +29,23 @@ def apply_knowledge(spec):
     backend = stack.get("backend")
     database = stack.get("database")
 
+    has_public = _has_public_site(spec)
+
     # Frontend knowledge
     if frontend == "nextjs":
 
-        if "Use SSR or ISR for SEO-sensitive pages." not in decisions:
-            decisions.append(
-                "Use SSR or ISR for SEO-sensitive pages."
-            )
+        # SSR/ISR and CDN are only relevant for public-facing sites.
+        # Internal apps using Next.js don't need SEO or public CDN.
+        if has_public:
+            if "Use SSR or ISR for SEO-sensitive pages." not in decisions:
+                decisions.append(
+                    "Use SSR or ISR for SEO-sensitive pages."
+                )
 
-        if "Serve static assets through CDN." not in decisions:
-            decisions.append(
-                "Serve static assets through CDN."
-            )
+            if "Serve static assets through CDN." not in decisions:
+                decisions.append(
+                    "Serve static assets through CDN."
+                )
 
     # Backend knowledge
     if backend in ["node-api", "payload"]:

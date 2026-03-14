@@ -2,6 +2,14 @@
 
 Generates system architecture based on stack, features, capabilities,
 and structured discovery signals.
+
+Key change: public-site related decisions (CDN, SSR/ISR, public traffic
+caching) are only generated when public-site is actually in capabilities.
+The old pattern `"public-site" in capabilities and needs_public_site is not False`
+allowed leakage when public-site survived without confirmation.  Now the
+capabilities list is the single source of truth — if capability_derivation
+and discovery_merge did their job, public-site won't be in capabilities
+unless it was justified.
 """
 
 
@@ -81,6 +89,14 @@ def _core_features(signals):
     return items
 
 
+def _has_public_site(capabilities):
+    """Check if public-site is in the reconciled capabilities list.
+    This is the single source of truth — it means capability_derivation
+    and discovery_merge have already validated whether public-site
+    should be present."""
+    return "public-site" in capabilities
+
+
 def generate_architecture(spec):
     stack = spec.get("stack", {})
     features = spec.get("features", [])
@@ -92,13 +108,14 @@ def generate_architecture(spec):
     backend = stack.get("backend")
     database = stack.get("database")
 
-    needs_public_site = signals.get("needs_public_site")
     needs_cms = signals.get("needs_cms")
     needs_i18n = signals.get("needs_i18n")
     needs_scheduled_jobs = signals.get("needs_scheduled_jobs")
     primary_audience = signals.get("primary_audience")
     app_shape = signals.get("app_shape")
     core_work_features = _core_features(signals)
+
+    has_public = _has_public_site(capabilities)
 
     architecture = _clone_architecture(existing_architecture)
     components = architecture["components"]
@@ -154,7 +171,7 @@ def generate_architecture(spec):
                 "role": "media storage",
             }
         )
-        add_decision("Media assets are stored in object storage.")
+        add_decision("Media assets stored in object storage.")
 
     if "scheduled-publishing" in features or "scheduled-jobs" in capabilities or needs_scheduled_jobs is True:
         add_component(
@@ -164,14 +181,16 @@ def generate_architecture(spec):
                 "role": "background processing",
             }
         )
+        add_decision("Background worker processes scheduled jobs.")
 
     if "authentication" in features:
-        add_decision("Authentication is handled through secure sessions or JWT-based flows.")
+        add_decision("Authentication handled via secure session or JWT.")
 
     if "roles" in features:
         add_decision("Authorization must enforce role and permission boundaries.")
 
-    if needs_public_site is True or ("public-site" in capabilities and needs_public_site is not False):
+    # Public-site decisions ONLY when public-site is in reconciled capabilities
+    if has_public:
         add_decision("Public-facing pages should use caching and delivery strategies appropriate for anonymous traffic.")
         add_decision("SEO-sensitive public pages should use rendering strategies such as SSR or ISR when beneficial.")
 
@@ -188,7 +207,7 @@ def generate_architecture(spec):
         add_decision("Model work items, deadlines, ownership, and progress explicitly in the application domain.")
         add_decision("Prioritize internal workflow clarity and fast task-oriented interactions.")
 
-    if primary_audience == "internal_teams" and needs_public_site is False:
+    if primary_audience == "internal_teams" and not has_public:
         add_decision("Prioritize internal dashboard and workflow ergonomics over public-site delivery concerns.")
 
     if "deadlines" in core_work_features:
@@ -211,7 +230,7 @@ def generate_architecture(spec):
     add_decision("Use connection pooling.")
     add_decision("Add automated database backups.")
 
-    if needs_public_site is True or ("public-site" in capabilities and needs_public_site is not False):
+    if has_public:
         add_decision("Introduce caching for frequently accessed public content.")
     else:
         add_decision("Introduce caching for frequently accessed application data where beneficial.")

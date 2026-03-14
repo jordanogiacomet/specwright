@@ -1,6 +1,9 @@
 """Constraint Engine.
 
 Generates system constraints from capabilities, features, and structured discovery signals.
+
+Key change: uses capabilities list as single source of truth for public-site,
+instead of the old pattern that checked both capabilities and signals separately.
 """
 
 
@@ -19,23 +22,29 @@ def _append_unique(target, value):
         target.append(value)
 
 
+def _has_public_site(capabilities):
+    """Check if public-site is in the reconciled capabilities list."""
+    return "public-site" in capabilities
+
+
 def generate_constraints(spec):
     capabilities = spec.get("capabilities", [])
     features = spec.get("features", [])
     signals = _get_decision_signals(spec)
 
-    needs_public_site = signals.get("needs_public_site")
     needs_i18n = signals.get("needs_i18n")
     needs_scheduled_jobs = signals.get("needs_scheduled_jobs")
     primary_audience = signals.get("primary_audience")
     app_shape = signals.get("app_shape")
+
+    has_public = _has_public_site(capabilities)
 
     performance: list[str] = []
     scalability: list[str] = []
     security: list[str] = []
     operational: list[str] = []
 
-    if needs_public_site is True or ("public-site" in capabilities and needs_public_site is not False):
+    if has_public:
         _append_unique(performance, "Public pages should render quickly under normal load.")
         _append_unique(performance, "API responses should target low median latency for public traffic.")
         _append_unique(performance, "Public assets should be cacheable and efficiently delivered.")

@@ -226,7 +226,7 @@ Fluxo ativo:
 
 Pipeline real de `initializer new`:
 
-1. pede a descricao livre do projeto
+1. pede a descrição livre do projeto
 2. chama `build_initial_spec(prompt)`
 3. `build_initial_spec()` chama `detect_archetype(prompt)`
 4. coleta respostas estruturadas do usuário
@@ -266,9 +266,9 @@ Valores estruturados atuais:
 Flags atualmente expostas em `initializer new`:
 
 - `--assist`
-  - habilita descoberta assistida por IA antes da derivacao final do spec
+  - habilita descoberta assistida por IA antes da derivação final do spec
 - `--spec`
-  - existe no CLI, mas hoje nao e o centro do fluxo interativo principal e deve ser tratado com cautela
+  - existe no CLI, mas hoje não é o centro do fluxo interativo principal e deve ser tratado com cautela
 
 ## Derivação atual de archetype, features e capabilities
 
@@ -458,7 +458,7 @@ Esse diretório registra o caso editorial principal que foi usado como validaç�
 
 O principal cenário de referência deste repositório hoje é o editorial.
 
-Prompt de referencia:
+Prompt de referência:
 
 `Editorial CMS with admin panel, public website, media library, preview, and scheduled publishing for articles`
 
@@ -483,7 +483,7 @@ Resultado esperado de alto nível no fluxo ativo:
 - aplicação de capability handlers
 - geração de arquitetura
 - geração de stories
-- derivacao de constraints, design system, risks e diagram
+- derivação de constraints, design system, risks e diagram
 - escrita em `output/<slug>/`
 
 ### Áreas que outro agente deve tratar com cautela

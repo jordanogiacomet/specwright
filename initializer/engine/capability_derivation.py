@@ -2,6 +2,10 @@
 
 Derives canonical capability identifiers from archetype metadata,
 structured answers, and structured discovery signals.
+
+Key change in this version: public-site is NOT added from surface alone
+when discovery signals exist but needs_public_site was never confirmed.
+The rule is: confirmed signals > inferred signals > onboarding defaults.
 """
 
 from initializer.engine.archetype_engine import (
@@ -95,12 +99,35 @@ def _get_discovery_signals(spec):
     return dict(signals)
 
 
+def _get_confirmed_signals(spec):
+    """Get signals that were explicitly confirmed by the user via followup."""
+    discovery = spec.get("discovery", {})
+    if not isinstance(discovery, dict):
+        return {}
+
+    confirmed = discovery.get("confirmed_signals", {})
+    if not isinstance(confirmed, dict):
+        return {}
+
+    return dict(confirmed)
+
+
+def _has_discovery(spec):
+    """Check if discovery has been run at all."""
+    discovery = spec.get("discovery", {})
+    if not isinstance(discovery, dict):
+        return False
+    return discovery.get("assisted", False)
+
+
 def derive_capabilities(
     archetype=None,
     archetype_data=None,
     answers=None,
     existing_capabilities=None,
     decision_signals=None,
+    confirmed_signals=None,
+    has_discovery=False,
 ):
     capabilities = normalize_capabilities(existing_capabilities)
 
@@ -109,6 +136,7 @@ def derive_capabilities(
 
     answers = answers or {}
     decision_signals = decision_signals or {}
+    confirmed_signals = confirmed_signals or {}
 
     surface = _lookup_first(
         answers,
@@ -126,21 +154,46 @@ def derive_capabilities(
     primary_audience = decision_signals.get("primary_audience")
     app_shape = decision_signals.get("app_shape")
 
-    # explicit signals win over onboarding defaults
-    if needs_public_site is True:
-        _append_capability(capabilities, "public-site")
+    ps_confirmed = "needs_public_site" in confirmed_signals
+
+    # --- PUBLIC-SITE (conservative rule) ---
+    if ps_confirmed:
+        # User explicitly answered the question — respect absolutely
+        if needs_public_site is True:
+            _append_capability(capabilities, "public-site")
+        elif needs_public_site is False:
+            _remove_capability(capabilities, "public-site")
+    elif needs_public_site is True:
+        # AI inferred True but user didn't confirm directly.
+        # Be conservative only for internal_teams audience.
+        # For external_clients or mixed, inference + surface is sufficient evidence.
+        if primary_audience == "internal_teams":
+            # Internal audience + unconfirmed public-site → don't add
+            pass
+        else:
+            # External/mixed/unknown audience + AI inferred true → add
+            _append_capability(capabilities, "public-site")
     elif needs_public_site is False:
+        # AI inferred False — safe to remove
         _remove_capability(capabilities, "public-site")
     else:
-        if surface == "admin_plus_public_site" or _is_any_enabled(
-            answers,
-            [
-                ("public_site",),
-                ("guided_answers", "public_site"),
-            ],
-        ):
-            _append_capability(capabilities, "public-site")
+        # needs_public_site is None — no signal at all
+        if has_discovery:
+            # Discovery ran but never produced a signal for public-site.
+            # Don't add from surface alone when discovery is active.
+            pass
+        else:
+            # No discovery at all — fall back to surface-based derivation
+            if surface == "admin_plus_public_site" or _is_any_enabled(
+                answers,
+                [
+                    ("public_site",),
+                    ("guided_answers", "public_site"),
+                ],
+            ):
+                _append_capability(capabilities, "public-site")
 
+    # --- SCHEDULED-JOBS ---
     if needs_scheduled_jobs is True:
         _append_capability(capabilities, "scheduled-jobs")
     elif needs_scheduled_jobs is False:
@@ -158,6 +211,7 @@ def derive_capabilities(
     ):
         _append_capability(capabilities, "scheduled-jobs")
 
+    # --- I18N ---
     if needs_i18n is True:
         _append_capability(capabilities, "i18n")
     elif needs_i18n is False:
@@ -173,17 +227,19 @@ def derive_capabilities(
     ):
         _append_capability(capabilities, "i18n")
 
+    # --- CMS ---
     if needs_cms is True:
         _append_capability(capabilities, "cms")
     elif needs_cms is False:
         _remove_capability(capabilities, "cms")
 
-    # shape-based cleanup
+    # --- Shape-based cleanup ---
     if app_shape in {"internal-work-organizer", "backoffice", "worker-pipeline"}:
         if needs_cms is not True:
             _remove_capability(capabilities, "cms")
 
-    if primary_audience == "internal_teams" and needs_public_site is False:
+    if primary_audience == "internal_teams" and needs_public_site is not True:
+        # For internal audience, remove public-site unless explicitly confirmed True
         _remove_capability(capabilities, "public-site")
 
     return normalize_capabilities(capabilities)
@@ -196,5 +252,7 @@ def derive_capabilities_for_spec(spec):
         answers=spec.get("answers"),
         existing_capabilities=spec.get("capabilities"),
         decision_signals=_get_discovery_signals(spec),
+        confirmed_signals=_get_confirmed_signals(spec),
+        has_discovery=_has_discovery(spec),
     )
     return spec

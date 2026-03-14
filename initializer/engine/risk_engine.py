@@ -2,6 +2,9 @@
 
 Generates architectural and product risks from capabilities, features,
 and structured discovery signals.
+
+Key change: public traffic risks are only generated when public-site
+is actually in the reconciled capabilities list.
 """
 
 
@@ -23,21 +26,28 @@ def _append_unique_risk(target, item):
     target.append(item)
 
 
+def _has_public_site(capabilities):
+    """Check if public-site is in the reconciled capabilities list."""
+    return "public-site" in capabilities
+
+
 def analyze_risks(spec):
     capabilities = spec.get("capabilities", [])
     features = spec.get("features", [])
     signals = _get_decision_signals(spec)
 
-    needs_public_site = signals.get("needs_public_site")
     needs_cms = signals.get("needs_cms")
     needs_i18n = signals.get("needs_i18n")
     needs_scheduled_jobs = signals.get("needs_scheduled_jobs")
     primary_audience = signals.get("primary_audience")
     app_shape = signals.get("app_shape")
 
+    has_public = _has_public_site(capabilities)
+
     risks: list[dict[str, str]] = []
 
-    if needs_public_site is True or ("public-site" in capabilities and needs_public_site is not False):
+    # Public traffic risks ONLY when public-site is in reconciled capabilities
+    if has_public:
         _append_unique_risk(
             risks,
             {

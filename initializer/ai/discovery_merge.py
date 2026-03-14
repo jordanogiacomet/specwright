@@ -146,6 +146,8 @@ def _word_tokens(value: str) -> set[str]:
 
 
 def _extract_followup_signals(spec: dict[str, Any]) -> dict[str, Any]:
+    """Extract signal values that have been explicitly confirmed by the
+    user via followup answers.  These are 'confirmed' signals."""
     discovery = spec.get("discovery", {})
     if not isinstance(discovery, dict):
         return {}
@@ -568,7 +570,18 @@ def _normalize_feature_candidates(
 def _merge_decision_signals(
     spec: dict[str, Any],
     incoming_signals: dict[str, Any],
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Merge decision signals with explicit provenance tracking.
+
+    Returns (effective_signals, inferred_signals, confirmed_signals).
+
+    The merge order is:
+    1. existing signals (from prior discovery pass) — lowest priority
+    2. incoming AI signals — middle priority (these are 'inferred')
+    3. followup signals from user — highest priority (these are 'confirmed')
+
+    Confirmed signals always win over inferred signals.
+    """
     discovery = spec.get("discovery", {})
     if not isinstance(discovery, dict):
         discovery = {}
@@ -577,22 +590,47 @@ def _merge_decision_signals(
     if not isinstance(existing_signals, dict):
         existing_signals = {}
 
-    followup_signals = _extract_followup_signals(spec)
+    # Extract user-confirmed signals from followup answers
+    confirmed_signals = _extract_followup_signals(spec)
 
-    merged = deepcopy(existing_signals)
+    # Track which signals are inferred (AI-generated)
+    inferred_signals: dict[str, Any] = {}
+
+    # Build effective signals: start with existing, layer incoming, then confirmed
+    effective = deepcopy(existing_signals)
+
     for key, value in incoming_signals.items():
-        merged[key] = value
+        if key not in confirmed_signals:
+            # Only apply AI inference if user hasn't confirmed this signal
+            effective[key] = value
+            inferred_signals[key] = value
+        # If user has confirmed, skip the AI value
 
-    for key, value in followup_signals.items():
-        merged[key] = value
+    # Confirmed signals always win
+    for key, value in confirmed_signals.items():
+        effective[key] = value
 
-    return _coerce_decision_signals(merged)
+    effective = _coerce_decision_signals(effective)
+    confirmed_signals = _coerce_decision_signals(confirmed_signals)
+
+    return effective, inferred_signals, confirmed_signals
 
 
 def _apply_capability_signals(
     capabilities: list[str],
     decision_signals: dict[str, Any],
+    confirmed_signals: dict[str, Any],
 ) -> tuple[list[str], list[str], list[str]]:
+    """Apply capability additions/removals based on decision signals.
+
+    Key change: for public-site, we apply a conservative rule:
+    - If needs_public_site is explicitly confirmed False → remove
+    - If needs_public_site is explicitly confirmed True → add
+    - If needs_public_site is only inferred (not confirmed) → do NOT add,
+      but also do NOT remove if it was already there from archetype defaults
+    - If needs_public_site is None (never asked) and the surface was
+      admin_plus_public_site → keep it tentatively BUT flag it
+    """
     current = []
     for capability in capabilities:
         if not isinstance(capability, str):
@@ -623,31 +661,52 @@ def _apply_capability_signals(
     app_shape = decision_signals.get("app_shape")
     primary_audience = decision_signals.get("primary_audience")
 
+    # --- CMS ---
     if needs_cms is True:
         ensure_present("cms")
     elif needs_cms is False:
         ensure_absent("cms")
 
-    if needs_public_site is True:
-        ensure_present("public-site")
-    elif needs_public_site is False:
-        ensure_absent("public-site")
+    # --- PUBLIC-SITE (conservative rule) ---
+    ps_confirmed = "needs_public_site" in confirmed_signals
+    if ps_confirmed:
+        # User explicitly answered: respect it absolutely
+        if needs_public_site is True:
+            ensure_present("public-site")
+        elif needs_public_site is False:
+            ensure_absent("public-site")
+    else:
+        # Not confirmed by user directly
+        if needs_public_site is False:
+            ensure_absent("public-site")
+        elif needs_public_site is True:
+            # AI inferred True — conservative only for internal_teams
+            if primary_audience == "internal_teams":
+                pass  # don't add for internal audience without confirmation
+            else:
+                # External/mixed/unknown + AI inferred true → sufficient evidence
+                ensure_present("public-site")
+        # If needs_public_site is None, leave capabilities as-is from archetype
 
+    # --- I18N ---
     if needs_i18n is True:
         ensure_present("i18n")
     elif needs_i18n is False:
         ensure_absent("i18n")
 
+    # --- SCHEDULED-JOBS ---
     if needs_scheduled_jobs is True:
         ensure_present("scheduled-jobs")
     elif needs_scheduled_jobs is False:
         ensure_absent("scheduled-jobs")
 
+    # --- Shape-based cleanup ---
     if app_shape in {"internal-work-organizer", "backoffice", "worker-pipeline"}:
         if needs_cms is not True:
             ensure_absent("cms")
 
-    if primary_audience == "internal_teams" and needs_public_site is False:
+    if primary_audience == "internal_teams" and needs_public_site is not True:
+        # For internal-teams audience, remove public-site unless explicitly confirmed True
         ensure_absent("public-site")
 
     return current, added, removed
@@ -717,11 +776,26 @@ def _merge_additional_questions(
     existing_value: Any,
     incoming_questions: list[Any],
 ) -> list[Any]:
+    """Merge additional questions, deduplicating by both id AND signal_key.
+
+    Accepts both dict questions (with id, question, signal_key) and plain
+    strings (legacy format from tests).  Strings are deduplicated by value.
+    """
     existing_questions = existing_value if isinstance(existing_value, list) else []
     merged: list[Any] = []
     seen_ids: set[str] = set()
+    seen_signal_keys: set[str] = set()
+    seen_strings: set[str] = set()
 
     for item in existing_questions + incoming_questions:
+        # Handle plain string questions (legacy/test format)
+        if isinstance(item, str):
+            text = item.strip()
+            if text and text not in seen_strings:
+                seen_strings.add(text)
+                merged.append(item)
+            continue
+
         if not isinstance(item, dict):
             continue
 
@@ -734,6 +808,14 @@ def _merge_additional_questions(
         if question_id in seen_ids:
             continue
 
+        # Deduplicate by signal_key too
+        signal_key = item.get("signal_key")
+        if isinstance(signal_key, str) and signal_key.strip():
+            sk = signal_key.strip()
+            if sk in seen_signal_keys:
+                continue
+            seen_signal_keys.add(sk)
+
         seen_ids.add(question_id)
         merged.append(item)
 
@@ -745,6 +827,8 @@ def _merge_discovery_metadata(
     result: AssistedDiscoveryResult,
     *,
     merged_decision_signals: dict[str, Any],
+    inferred_signals: dict[str, Any],
+    confirmed_signals: dict[str, Any],
     normalized_capability_candidates: list[str],
     normalized_feature_candidates: list[str],
     applied_answer_updates: dict[str, Any],
@@ -759,7 +843,12 @@ def _merge_discovery_metadata(
 
     merged = dict(existing)
     merged["assisted"] = True
+
+    # Store signals with provenance
     merged["decision_signals"] = merged_decision_signals
+    merged["inferred_signals"] = inferred_signals
+    merged["confirmed_signals"] = confirmed_signals
+
     merged["assumptions"] = _merge_string_lists(
         existing.get("assumptions", []),
         result.assumptions,
@@ -792,9 +881,18 @@ def _merge_discovery_metadata(
         or applied_feature_candidates
     )
 
+    # Normalize additional_questions: accept AssistedDiscoveryQuestion
+    # objects (from real discovery), plain dicts, and plain strings (legacy).
+    incoming_questions = []
+    for q in result.additional_questions:
+        if hasattr(q, "to_dict"):
+            incoming_questions.append(q.to_dict())
+        elif isinstance(q, (dict, str)):
+            incoming_questions.append(q)
+
     merged["additional_questions"] = _merge_additional_questions(
         existing.get("additional_questions", []),
-        [question.to_dict() for question in result.additional_questions],
+        incoming_questions,
     )
 
     if isinstance(existing.get("followup_answers"), dict):
@@ -812,7 +910,8 @@ def merge_assisted_discovery(
     merged_spec.setdefault("capabilities", [])
     merged_spec.setdefault("features", [])
 
-    merged_decision_signals = _merge_decision_signals(
+    # Merge signals with provenance tracking
+    merged_decision_signals, inferred_signals, confirmed_signals = _merge_decision_signals(
         merged_spec,
         result.decision_signals,
     )
@@ -850,6 +949,7 @@ def merge_assisted_discovery(
     reconciled_capabilities, signal_added_capabilities, removed_capabilities = _apply_capability_signals(
         merged_capabilities,
         merged_decision_signals,
+        confirmed_signals,
     )
     merged_spec["capabilities"] = reconciled_capabilities
 
@@ -882,6 +982,8 @@ def merge_assisted_discovery(
         merged_spec,
         result,
         merged_decision_signals=merged_decision_signals,
+        inferred_signals=inferred_signals,
+        confirmed_signals=confirmed_signals,
         normalized_capability_candidates=normalized_capability_candidates,
         normalized_feature_candidates=normalized_feature_candidates,
         applied_answer_updates=applied_answer_updates,
