@@ -19,6 +19,7 @@ initializer/capabilities/scheduled_jobs.py
 initializer/engine/archetype_engine.py
 initializer/engine/architecture_engine.py
 initializer/engine/architeture_diagram_engine.py
+initializer/engine/capability_derivation.py
 initializer/engine/capability_engine.py
 initializer/engine/capability_registry.py
 initializer/engine/constraint_engine.py
