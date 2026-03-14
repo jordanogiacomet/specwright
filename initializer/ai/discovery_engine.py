@@ -155,6 +155,14 @@ def build_discovery_instructions() -> str:
         "- Do not repeat questions already answered in followup_answers.\n"
         "- Do not repeat questions whose signal_key has already been answered.\n"
         "- Prefer product-shape questions before architecture questions.\n"
+        "- IMPORTANT: When asking about core work features, ALWAYS use answer_type 'list'\n"
+        "  with signal_key 'core_work_features'. Ask the user to provide a comma-separated\n"
+        "  list of features they need. NEVER ask individual boolean questions for each\n"
+        "  work feature (e.g. do NOT ask 'Do you need report generation?' as boolean\n"
+        "  with signal_key 'core_work_features'). Instead, ask ONE list question like:\n"
+        "  'Which core work features are needed? (e.g. deadlines, task-assignment, report-generation)'\n"
+        "- For boolean signal_keys (needs_public_site, needs_cms, needs_i18n, needs_scheduled_jobs),\n"
+        "  use answer_type 'boolean'.\n"
         "\n"
         "Rules for decision_signals:\n"
         "- Supported boolean keys: needs_public_site, needs_cms, needs_i18n, needs_scheduled_jobs\n"
@@ -167,9 +175,13 @@ def build_discovery_instructions() -> str:
         "  If you are unsure, leave the signal out rather than guessing true.\n"
         "\n"
         "Rules for core_work_features:\n"
+        "- core_work_features is ALWAYS a list of strings, never a boolean.\n"
         "- Use product/domain capabilities, not technical plumbing.\n"
         "- Good examples: deadlines, progress-tracking, task-assignment, reminders, report-generation, approvals, team-visibility\n"
         "- Bad examples: authentication, api, database, frontend\n"
+        "- When you infer core_work_features in decision_signals, always provide a list.\n"
+        "- If you believe the product needs work features but aren't sure which ones,\n"
+        "  ask a list question instead of guessing.\n"
         "\n"
         "Rules for capability_candidates:\n"
         "- Allowed capability IDs are: cms, public-site, scheduled-jobs, i18n\n"
@@ -254,6 +266,11 @@ def _normalize_question(value: Any) -> AssistedDiscoveryQuestion | None:
     if isinstance(signal_key, str) and signal_key.strip():
         normalized_signal_key = signal_key.strip()
 
+    # Auto-correct: core_work_features must always be answered as a list.
+    # If the AI generated a boolean question for this signal_key, fix it.
+    if normalized_signal_key == "core_work_features" and answer_type == "boolean":
+        answer_type = "list"
+
     return AssistedDiscoveryQuestion(
         id=question_id.strip(),
         question=question_text.strip(),
@@ -326,6 +343,10 @@ def _normalize_decision_signals(value: Any) -> dict[str, Any]:
             continue
 
         if signal_key == "core_work_features":
+            # core_work_features must be a list of strings.
+            # If the AI returns a boolean or non-list, skip it entirely.
+            if not isinstance(item, list):
+                continue
             items = []
             for raw_item in _normalize_string_list(item):
                 lowered = raw_item.lower()
@@ -333,7 +354,9 @@ def _normalize_decision_signals(value: Any) -> dict[str, Any]:
                     continue
                 if lowered not in items:
                     items.append(lowered)
-            normalized[signal_key] = items
+            # Only set if we got actual features — don't overwrite with empty
+            if items:
+                normalized[signal_key] = items
             continue
 
         if isinstance(item, (str, bool, int, float, list, dict)):
