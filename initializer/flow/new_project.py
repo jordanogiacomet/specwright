@@ -27,6 +27,7 @@ from initializer.renderers.architecture_diagram_renderer import (
     write_architecture_diagram,
 )
 from initializer.renderers.openclaw_bundle import write_openclaw_bundle
+from initializer.renderers.codex_bundle import write_codex_bundle
 
 from initializer.validation.prd_validator import validate_prd
 from initializer.validation.story_coverage import check_story_coverage
@@ -637,6 +638,7 @@ def run_new_project(spec_path=None, assist: bool = False):
     write_stories(output_dir, spec)
     write_downstream_artifacts(output_dir, spec)
     write_openclaw_bundle(output_dir, spec)
+    write_codex_bundle(output_dir, spec)
 
     print("\nProject generated successfully.\n")
     print(output_dir)

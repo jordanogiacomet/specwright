@@ -46,6 +46,9 @@ def test_cli_new_generates_editorial_output():
     assert (out_dir / "docs" / "architecture" / "diagram.mmd").exists()
     assert (out_dir / ".openclaw" / "AGENTS.md").exists()
     assert (out_dir / ".openclaw" / "manifest.json").exists()
+    assert (out_dir / ".openclaw" / "execution-plan.json").exists()
+    assert (out_dir / ".codex" / "AGENTS.md").exists()
+    assert (out_dir / "ralph.sh").exists()
 
     spec = json.loads((out_dir / "spec.json").read_text())
 
