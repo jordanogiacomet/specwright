@@ -32,6 +32,7 @@ initializer/engine/story_engine.py
 initializer/flow/__init__.py
 initializer/flow/archetype_detection.py
 initializer/flow/doctor_project.py
+initializer/flow/enrich_project.py
 initializer/flow/new_project.py
 initializer/flow/plan_project.py
 initializer/flow/refine_project.py
@@ -41,11 +42,13 @@ initializer/graph/story_graph.py
 initializer/models/bootstrap.py
 initializer/playbooks/__init__.py
 initializer/playbooks/playbook_loader.py
+initializer/renderers/__init__.py
 initializer/renderers/architecture_diagram_renderer.py
 initializer/renderers/architecture_renderer.py
 initializer/renderers/constraints_renderer.py
 initializer/renderers/design_system_renderer.py
 initializer/renderers/knowledge_renderer.py
+initializer/renderers/openclaw_bundle.py
 initializer/renderers/prd_intelligence_renderer.py
 initializer/renderers/prd_renderer.py
 initializer/renderers/project_files.py

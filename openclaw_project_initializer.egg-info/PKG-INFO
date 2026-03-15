@@ -16,6 +16,16 @@ Hoje ele deve ser entendido como um projeto em modo de diagnóstico e alinhament
 
 Se outro ChatGPT ou agente for continuar o trabalho daqui, este README serve como mapa rápido do que o projeto é, do que realmente está ativo no código, e de quais regras conceituais não podem ser quebradas.
 
+## Se você é outro GPT, entenda isto primeiro
+
+- o comando que mais importa hoje é `initializer new`
+- o comando que valida o output atual é `initializer validate output/<slug>`
+- o modo `--assist` é opcional, conservador e pode fazer perguntas adicionais antes de fechar o `spec`
+- o cenário de referência mais confiável hoje é o editorial (`editorial-cms` com admin + public site)
+- `plan`, `doctor`, `runtime/` e `synthesis/` ainda exigem cautela
+- nunca colapse `archetype`, `capabilities`, `features` e `answers` em um único conceito
+- use `progress.txt`, `diagnosis.md`, `architecture.md` e `prd.json` como contexto obrigatório antes de mexer em contratos
+
 ## Maturidade atual
 
 Leitura honesta do estado do projeto hoje:
@@ -23,7 +33,7 @@ Leitura honesta do estado do projeto hoje:
 - complexidade conceitual: intermediário a avançado
 - maturidade de implementação: MVP técnico funcional com pipeline principal operante
 - prontidão para produção: baixa a média
-- fluxo mais confiavel: `initializer new`
+- fluxo mais confiável: `initializer new`
 - principal cenário validado: `editorial-cms` com admin + public site
 - confiança atual do fluxo principal: melhor do que no início da iteração, com cobertura automatizada no repositório para unit, integration, e2e e regression
 
@@ -63,7 +73,7 @@ Isso significa que qualquer agente deve:
 
 Os documentos de contexto desta iteração não são decorativos. Eles são parte do contrato de trabalho.
 
-## Ordem obrigatoria de leitura
+## Ordem obrigatória de leitura
 
 Antes de qualquer mudança relevante, leia nesta ordem:
 
@@ -317,7 +327,7 @@ Hoje ele deriva capabilities por estas fontes:
 
 1. defaults do `archetype`
 2. respostas estruturadas
-3. capabilities ja existentes no spec
+3. capabilities já existentes no spec
 
 Derivações ativas e confirmadas:
 
@@ -436,7 +446,7 @@ Esses engines alimentam documentos adicionais no diretório de output.
 Também existe uma camada auxiliar em `initializer/ai/` com dois papéis diferentes:
 
 - descoberta assistida para enriquecer entrada sem substituir o spec
-- refinamento heuristico posterior via `refine_engine`
+- refinamento heurístico posterior via `refine_engine`
 
 ## Estrutura de saída do fluxo `new`
 
