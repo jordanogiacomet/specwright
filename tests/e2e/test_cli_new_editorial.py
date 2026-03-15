@@ -37,16 +37,21 @@ def test_cli_new_generates_editorial_output():
     assert (out_dir / "spec.json").exists()
     assert (out_dir / "PRD.md").exists()
     assert (out_dir / "architecture.md").exists()
-    assert (out_dir / "stories").exists()
+    assert (out_dir / "decisions.md").exists()
+    assert (out_dir / "progress.txt").exists()
+    assert (out_dir / "docs" / "stories").exists()
     assert (out_dir / "docs" / "constraints.md").exists()
     assert (out_dir / "docs" / "design-system.md").exists()
     assert (out_dir / "docs" / "risks.md").exists()
     assert (out_dir / "docs" / "architecture" / "diagram.mmd").exists()
+    assert (out_dir / ".openclaw" / "AGENTS.md").exists()
+    assert (out_dir / ".openclaw" / "manifest.json").exists()
 
     spec = json.loads((out_dir / "spec.json").read_text())
 
     assert spec["archetype"] == "editorial-cms"
     assert spec["archetype_data"]["id"] == "editorial-cms"
+
     assert spec["answers"]["project_name"] == "Editorial E2E Test"
     assert spec["answers"]["project_slug"] == slug
     assert spec["answers"]["summary"] == "Editorial validation run"

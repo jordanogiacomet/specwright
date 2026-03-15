@@ -16,6 +16,14 @@ def main():
     plan_parser = subparsers.add_parser("plan")
     plan_parser.add_argument("--spec")
 
+    enrich_parser = subparsers.add_parser("enrich")
+    enrich_parser.add_argument("path", help="Path to generated project directory.")
+    enrich_parser.add_argument(
+        "--review",
+        action="store_true",
+        help="Also run AI architecture review (requires OPENAI_API_KEY).",
+    )
+
     refine_parser = subparsers.add_parser("refine")
     refine_parser.add_argument("path")
 
@@ -36,6 +44,11 @@ def main():
         from initializer.flow.plan_project import run_plan_project
 
         return run_plan_project(args.spec) or 0
+
+    elif args.command == "enrich":
+        from initializer.flow.enrich_project import run_enrich_project
+
+        return run_enrich_project(args.path, review=args.review)
 
     elif args.command == "refine":
         from initializer.flow.refine_project import run_refine_project

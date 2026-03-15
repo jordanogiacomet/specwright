@@ -15,11 +15,13 @@ CAPABILITY_COVERAGE_RULES = {
         },
         "title_keywords": {
             "cms content model",
+            "cms content management",
             "media library",
             "content preview",
             "scheduled publishing",
             "publish",
             "preview",
+            "define cms",
         },
         "description_keywords": {
             "collections",
@@ -27,6 +29,8 @@ CAPABILITY_COVERAGE_RULES = {
             "media assets",
             "unpublished content",
             "content models",
+            "content management",
+            "cms collections",
         },
     },
     "public-site": {
@@ -56,6 +60,7 @@ CAPABILITY_COVERAGE_RULES = {
             "setup job worker",
             "implement scheduled automation",
             "implement workflow automation jobs",
+            "implement background automation jobs",
             "implement scheduled publishing",
             "scheduler",
             "background jobs",
@@ -66,6 +71,8 @@ CAPABILITY_COVERAGE_RULES = {
             "scheduled workflows",
             "background worker",
             "publish content at scheduled time",
+            "background jobs",
+            "automation workflows",
         },
     },
     "i18n": {

@@ -432,13 +432,12 @@ The coding executor should be able to answer:
         json.dump(commands, f, indent=2, ensure_ascii=False)
 
 def write_downstream_artifacts(path, spec):
-    docs_dir = path / "docs"
-    docs_dir.mkdir(parents=True, exist_ok=True)
+    # Renderers already create a docs/ subdirectory internally
+    write_constraints(path, spec["constraints"])
+    write_design_system(path, spec["design_system"])
+    write_risks(path, spec["risks"])
+    write_architecture_diagram(path, spec["diagram"])
 
-    write_constraints(docs_dir, spec["constraints"])
-    write_design_system(docs_dir, spec["design_system"])
-    write_risks(docs_dir, spec["risks"])
-    write_architecture_diagram(docs_dir, spec["diagram"])
 
 
 
