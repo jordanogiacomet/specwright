@@ -1,6 +1,13 @@
 import argparse
 
 
+_REFERENCE_HELP = (
+    "Path to a directory of design reference images (png, jpg, webp). "
+    "The AI will analyze them and extract colors, layout, typography, and "
+    "components into the design system."
+)
+
+
 def main():
     parser = argparse.ArgumentParser(prog="initializer")
     subparsers = parser.add_subparsers(dest="command")
@@ -12,6 +19,7 @@ def main():
         action="store_true",
         help="Enable AI-assisted discovery before final spec generation.",
     )
+    new_parser.add_argument("--reference", help=_REFERENCE_HELP)
 
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("--spec", help="Path to existing spec.json to skip interactive input.")
@@ -30,6 +38,7 @@ def main():
         action="store_true",
         help="Stop after prepare, don't run ralph loop.",
     )
+    run_parser.add_argument("--reference", help=_REFERENCE_HELP)
 
     plan_parser = subparsers.add_parser("plan")
     plan_parser.add_argument("--spec")
@@ -65,13 +74,18 @@ def main():
         help="Interactively edit project design system (colors, typography, spacing, components).",
     )
     design_parser.add_argument("path", help="Path to generated project directory.")
+    design_parser.add_argument("--reference", help=_REFERENCE_HELP)
 
     args = parser.parse_args()
 
     if args.command == "new":
         from initializer.flow.new_project import run_new_project
 
-        return run_new_project(args.spec, assist=args.assist) or 0
+        return run_new_project(
+            args.spec,
+            assist=args.assist,
+            reference=args.reference,
+        ) or 0
 
     elif args.command == "run":
         from initializer.flow.run_project import run_full_pipeline
@@ -81,6 +95,7 @@ def main():
             assist=args.assist,
             dry_run=args.dry_run,
             skip_ralph=args.no_execute,
+            reference=args.reference,
         )
 
     elif args.command == "plan":
@@ -121,7 +136,7 @@ def main():
     elif args.command == "design":
         from initializer.flow.design_flow import run_design
 
-        return run_design(args.path)
+        return run_design(args.path, reference=getattr(args, "reference", None))
 
     else:
         parser.print_help()
