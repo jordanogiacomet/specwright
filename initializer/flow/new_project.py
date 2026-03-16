@@ -30,6 +30,7 @@ from initializer.renderers.architecture_diagram_renderer import (
 )
 from initializer.renderers.openclaw_bundle import write_openclaw_bundle
 from initializer.renderers.codex_bundle import write_codex_bundle
+from initializer.renderers.scaffold_engine import write_scaffold
 
 from initializer.validation.prd_validator import validate_prd
 from initializer.validation.story_coverage import check_story_coverage
@@ -828,6 +829,7 @@ def run_new_project(spec_path=None, assist: bool = False):
             print("-", item)
 
     output_dir = create_output_dir(spec["answers"]["project_slug"])
+    write_scaffold(output_dir, spec)
     write_json(output_dir / "spec.json", spec)
     write_prd(output_dir / "PRD.md", spec)
     write_architecture(output_dir / "architecture.md", spec)
