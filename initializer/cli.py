@@ -54,6 +54,18 @@ def main():
     validate_parser = subparsers.add_parser("validate")
     validate_parser.add_argument("path", nargs="?", default=".")
 
+    architect_parser = subparsers.add_parser(
+        "architect",
+        help="Interactively edit project architecture (components, communication, boundaries).",
+    )
+    architect_parser.add_argument("path", help="Path to generated project directory.")
+
+    design_parser = subparsers.add_parser(
+        "design",
+        help="Interactively edit project design system (colors, typography, spacing, components).",
+    )
+    design_parser.add_argument("path", help="Path to generated project directory.")
+
     args = parser.parse_args()
 
     if args.command == "new":
@@ -100,6 +112,16 @@ def main():
         from initializer.flow.validate_project import run_validate_project
 
         return run_validate_project(args.path)
+
+    elif args.command == "architect":
+        from initializer.flow.architect_flow import run_architect
+
+        return run_architect(args.path)
+
+    elif args.command == "design":
+        from initializer.flow.design_flow import run_design
+
+        return run_design(args.path)
 
     else:
         parser.print_help()

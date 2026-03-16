@@ -31,6 +31,7 @@ from initializer.renderers.architecture_diagram_renderer import (
 from initializer.renderers.openclaw_bundle import write_openclaw_bundle
 from initializer.renderers.codex_bundle import write_codex_bundle
 from initializer.renderers.scaffold_engine import write_scaffold
+from initializer.flow.challenges_flow import collect_challenge_decisions
 
 from initializer.validation.prd_validator import validate_prd
 from initializer.validation.story_coverage import check_story_coverage
@@ -810,6 +811,10 @@ def run_new_project(spec_path=None, assist: bool = False):
 
     spec = derive_capabilities_from_answers(spec)
     spec = apply_capabilities(spec)
+
+    if assist:
+        spec = collect_challenge_decisions(spec)
+
     spec = apply_knowledge(spec)
     spec["architecture"] = generate_architecture(spec)
     spec["stories"] = generate_stories(spec)
