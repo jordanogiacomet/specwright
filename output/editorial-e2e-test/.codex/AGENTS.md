@@ -42,13 +42,35 @@ The ralph.sh script will tell you which story to implement.
 - Do NOT add features not listed in the spec
 - Do NOT skip to later stories — implement only what is asked
 
+## Database migrations — CRITICAL
+
+**Every time you modify a collection, model, or database schema, you MUST generate and run a migration.**
+
+This includes:
+- Adding or removing fields on a collection
+- Creating a new collection
+- Adding localization to fields
+- Changing field types or validation rules
+- Adding relationships between collections
+
+Migration workflow:
+1. Make the schema change (edit collection file)
+2. Generate a migration: `npx payload migrate:create`
+3. Run the migration: `npx payload migrate`
+4. Verify the migration ran: `npx payload migrate:status`
+
+**If you skip this step, the application will crash at runtime with "relation does not exist" errors.**
+
+The ralph.sh script will also run `npx payload migrate` after your story completes as a safety net, but you should generate the migration yourself as part of the story implementation.
+
 ## Validation
 
 After implementing a story, run in this order (if available):
 
-1. `npm test` or equivalent test command
-2. `npm run lint` or equivalent lint command
-3. `npm run build` or equivalent build command
+1. Generate and run migrations if schema changed: `npx payload migrate`
+2. `npm test` or equivalent test command
+3. `npm run lint` or equivalent lint command
+4. `npm run build` or equivalent build command
 
 Record results. If a command doesn't exist yet, note that.
 
@@ -58,3 +80,4 @@ Record results. If a command doesn't exist yet, note that.
 - Backend: payload
 - Database: postgres
 - Deploy target: docker
+- Migration command: `npx payload migrate`

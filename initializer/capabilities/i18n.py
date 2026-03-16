@@ -52,6 +52,7 @@ def apply_i18n(spec, architecture, stories):
                     "Fallback rules are defined for missing translations",
                     "Admin interface allows editing content per locale",
                     "API responses include locale metadata",
+                    "Database migration is generated and executed for locale field changes (run migrate:create then migrate)",
                 ],
                 "scope_boundaries": [
                     "Do NOT implement locale routing in this story — that is separate",

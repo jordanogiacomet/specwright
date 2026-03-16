@@ -126,10 +126,21 @@ _DEFAULT_VALIDATION = {
     "manual_check": None,
 }
 
+_MIGRATION_CRITERIA = "Database migration is generated and executed for all schema changes (run migrate:create then migrate)"
+
 
 def _validation(commands=None, manual_check=None):
     return {
         "commands": commands or ["npm run build", "npm run lint"],
+        "manual_check": manual_check,
+    }
+
+
+def _schema_validation(commands=None, manual_check=None):
+    """Validation for stories that modify database schema."""
+    base_commands = commands or ["npm run build", "npm run lint"]
+    return {
+        "commands": base_commands,
         "manual_check": manual_check,
     }
 
@@ -253,6 +264,7 @@ def generate_stories(spec):
                 "Initial migration or schema setup runs without errors",
                 "Connection can be verified programmatically",
                 "docker-compose.yml includes database service" if database == "postgres" else f"{database} setup is documented",
+                _MIGRATION_CRITERIA,
             ],
             scope_boundaries=[
                 "Do NOT create application tables yet — only the connection layer",
@@ -364,6 +376,7 @@ def generate_stories(spec):
         else:
             auth_files.append("src/api/auth.ts")
 
+        auth_ac.append(_MIGRATION_CRITERIA)
         auth_files.append(_frontend_page_path(stack, "(auth)/login"))
 
         upsert_story(
@@ -390,6 +403,7 @@ def generate_stories(spec):
             "Permissions are enforced on protected endpoints",
             "Admin users can manage other users' roles",
             "Unauthorized role access returns 403",
+            _MIGRATION_CRITERIA,
         ]
         roles_files = [_lib_path("permissions")]
 
@@ -422,6 +436,7 @@ def generate_stories(spec):
             "Uploaded media is stored and retrievable via URL",
             "Media list view shows uploaded assets with thumbnails",
             "File size and type validation is enforced on upload",
+            _MIGRATION_CRITERIA,
         ]
         media_files = []
 
@@ -455,6 +470,7 @@ def generate_stories(spec):
             "Only authorized roles can transition content to published state",
             "Published content is visible through the appropriate surface",
             "Draft content is only visible to editors and admins",
+            _MIGRATION_CRITERIA,
         ]
 
         if "roles" in features:
@@ -517,6 +533,7 @@ def generate_stories(spec):
                 "Published content appears on the appropriate surface after the scheduled time",
                 "Job runs reliably on a configurable interval",
                 "Failed publish attempts are logged and retried",
+                _MIGRATION_CRITERIA,
             ],
             scope_boundaries=[
                 "Do NOT implement a full job queue system — a simple cron-style check is sufficient",

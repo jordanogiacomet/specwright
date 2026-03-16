@@ -32,6 +32,7 @@ from initializer.renderers.openclaw_bundle import write_openclaw_bundle
 from initializer.renderers.codex_bundle import write_codex_bundle
 from initializer.renderers.scaffold_engine import write_scaffold
 from initializer.flow.challenges_flow import collect_challenge_decisions
+from initializer.flow.design_style_flow import collect_design_style
 
 from initializer.validation.prd_validator import validate_prd
 from initializer.validation.story_coverage import check_story_coverage
@@ -849,6 +850,10 @@ def run_new_project(spec_path=None, assist: bool = False, reference: str | None 
     spec["stories"] = generate_stories(spec)
     spec = refine_spec(spec)
     spec = derive_downstream_artifacts(spec)
+
+    if assist:
+        spec = collect_design_style(spec)
+
     spec = _apply_design_reference(spec, reference)
 
     errors = validate_prd(spec)

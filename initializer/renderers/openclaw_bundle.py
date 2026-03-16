@@ -110,6 +110,46 @@ def _build_execution_plan(spec: dict[str, Any]) -> dict[str, Any]:
             else:
                 phases["features"].append(entry)
 
+    # ---------------------------------------------------------------
+    # Sort stories within each phase by dependency order
+    # Stories that depend on feature.* come after stories that only
+    # depend on bootstrap.* within the features phase.
+    # ---------------------------------------------------------------
+
+    def _dependency_depth(entry: dict[str, Any]) -> int:
+        """Compute a sorting key based on dependency depth.
+
+        Stories with no depends_on or only bootstrap.* deps sort first (0).
+        Stories depending on feature.* sort by their dependency chain depth.
+        """
+        deps = entry.get("depends_on", [])
+        if not deps:
+            return 0
+
+        depth = 0
+        for dep in deps:
+            if dep.startswith("feature."):
+                # Find which feature it depends on and check that feature's deps
+                dep_depth = 1
+                # Look up the dependent story's own deps
+                for other in phases.get("features", []):
+                    other_key = other.get("story_key", "")
+                    if other_key == dep:
+                        other_deps = other.get("depends_on", [])
+                        if any(d.startswith("feature.") for d in other_deps):
+                            dep_depth = 2
+                        break
+                depth = max(depth, dep_depth)
+            elif dep.startswith("bootstrap."):
+                depth = max(depth, 0)
+            else:
+                depth = max(depth, 1)
+
+        return depth
+
+    for phase_name in phases:
+        phases[phase_name].sort(key=_dependency_depth)
+
     ordered: list[dict[str, Any]] = []
     order = 1
 

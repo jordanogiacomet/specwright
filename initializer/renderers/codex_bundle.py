@@ -5,6 +5,9 @@ reads directly during the ralph loop:
 
 - .codex/AGENTS.md — instructions the Codex CLI reads automatically
 - ralph.sh — shell script that iterates stories via Codex CLI
+
+Key change: ralph.sh now runs database migrations automatically after
+each story, and the AGENTS.md and prompt include migration instructions.
 """
 
 from __future__ import annotations
@@ -23,6 +26,18 @@ def _get_decision_signals(spec: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(signals, dict):
         return {}
     return signals
+
+
+def _detect_migration_command(spec: dict[str, Any]) -> str:
+    """Detect the migration command based on the backend stack."""
+    backend = (spec.get("stack", {}).get("backend") or "").lower().strip()
+
+    if backend in ("payload", "payload-cms"):
+        return "npx payload migrate"
+    elif backend == "django":
+        return "python manage.py migrate"
+    else:
+        return "npm run db:migrate"
 
 
 def _build_agents_md(spec: dict[str, Any]) -> str:
@@ -58,6 +73,78 @@ def _build_agents_md(spec: dict[str, Any]) -> str:
         do_not_rules.append("- Do NOT add background workers, cron jobs, or scheduled tasks")
 
     do_not_section = "\n".join(do_not_rules) if do_not_rules else "- No specific restrictions"
+
+    migration_cmd = _detect_migration_command(spec)
+    backend = stack.get("backend", "unknown")
+
+    # --- Project structure section ---
+    project_structure = spec.get("project_structure", {})
+    structure_section = ""
+    if project_structure:
+        root_type = project_structure.get("root_type", "")
+        directories = project_structure.get("directories", [])
+        root_files = project_structure.get("root_files", [])
+
+        lines = [f"\n## Project structure\n"]
+        if root_type:
+            lines.append(f"Layout: {root_type}\n")
+
+        if directories:
+            lines.append("### Directories\n")
+            lines.append("```")
+            for d in directories:
+                lines.append(f"{d['path']:40s}  # {d['purpose']}")
+            lines.append("```\n")
+
+        if root_files:
+            lines.append("### Root files\n")
+            lines.append("```")
+            for f in root_files:
+                lines.append(f"{f['path']:40s}  # {f['purpose']}")
+            lines.append("```\n")
+
+        lines.append("Create files in these locations. Do NOT invent a different directory structure.\n")
+        structure_section = "\n".join(lines)
+
+    # --- Domain model section ---
+    domain_model = spec.get("domain_model", {})
+    domain_section = ""
+    if domain_model:
+        entities = domain_model.get("entities", [])
+        roles = domain_model.get("roles", [])
+        auth_model = domain_model.get("auth_model", {})
+
+        lines = ["\n## Domain model\n"]
+
+        if entities:
+            lines.append("### Entities\n")
+            for entity in entities:
+                name = entity.get("name", "?")
+                desc = entity.get("description", "")
+                states = entity.get("states", [])
+                lines.append(f"**{name}**: {desc}")
+                if states:
+                    lines.append(f"  States: {' → '.join(states)}")
+                rels = entity.get("relationships", [])
+                if rels:
+                    lines.append(f"  Relationships: {', '.join(rels)}")
+                lines.append("")
+
+        if roles:
+            lines.append("### Roles\n")
+            for role in roles:
+                name = role.get("name", "?")
+                perms = role.get("can", [])
+                lines.append(f"- **{name}**: {', '.join(perms)}")
+            lines.append("")
+
+        if auth_model:
+            strategy = auth_model.get("strategy", "email_password")
+            session = auth_model.get("session", "jwt")
+            lines.append(f"### Auth: {strategy}, session: {session}\n")
+
+        lines.append("Implement entities, states, and permissions as described above.\n")
+        domain_section = "\n".join(lines)
 
     return f"""# AGENTS.md
 
@@ -101,14 +188,36 @@ The ralph.sh script will tell you which story to implement.
 - Do NOT redesign the architecture
 - Do NOT add features not listed in the spec
 - Do NOT skip to later stories — implement only what is asked
+{structure_section}{domain_section}
+## Database migrations — CRITICAL
+
+**Every time you modify a collection, model, or database schema, you MUST generate and run a migration.**
+
+This includes:
+- Adding or removing fields on a collection
+- Creating a new collection
+- Adding localization to fields
+- Changing field types or validation rules
+- Adding relationships between collections
+
+Migration workflow:
+1. Make the schema change (edit collection file)
+2. Generate a migration: `{migration_cmd}:create`
+3. Run the migration: `{migration_cmd}`
+4. Verify the migration ran: `{migration_cmd}:status`
+
+**If you skip this step, the application will crash at runtime with "relation does not exist" errors.**
+
+The ralph.sh script will also run `{migration_cmd}` after your story completes as a safety net, but you should generate the migration yourself as part of the story implementation.
 
 ## Validation
 
 After implementing a story, run in this order (if available):
 
-1. `npm test` or equivalent test command
-2. `npm run lint` or equivalent lint command
-3. `npm run build` or equivalent build command
+1. Generate and run migrations if schema changed: `{migration_cmd}`
+2. `npm test` or equivalent test command
+3. `npm run lint` or equivalent lint command
+4. `npm run build` or equivalent build command
 
 Record results. If a command doesn't exist yet, note that.
 
@@ -118,6 +227,7 @@ Record results. If a command doesn't exist yet, note that.
 - Backend: {stack.get("backend", "unknown")}
 - Database: {stack.get("database", "unknown")}
 - Deploy target: {answers.get("deploy_target", "unknown")}
+- Migration command: `{migration_cmd}`
 """
 
 
@@ -125,6 +235,7 @@ def _build_ralph_sh(spec: dict[str, Any]) -> str:
     """Build ralph.sh — the story-by-story execution script for Codex CLI."""
     answers = spec.get("answers", {})
     project_name = answers.get("project_name", "Generated Project")
+    migration_cmd = _detect_migration_command(spec)
 
     return f'''#!/usr/bin/env bash
 set -euo pipefail
@@ -134,12 +245,13 @@ set -euo pipefail
 #
 # This script reads .openclaw/execution-plan.json, finds the next
 # pending story, builds a prompt file, and runs Codex CLI to implement it.
-# After each story, it runs validation and records progress.
+# After each story, it runs migrations and validation, then records progress.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLAN_FILE="$SCRIPT_DIR/.openclaw/execution-plan.json"
 PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
 STORIES_DIR="$SCRIPT_DIR/docs/stories"
+MIGRATION_CMD="{migration_cmd}"
 
 DRY_RUN=false
 START_FROM=""
@@ -203,6 +315,48 @@ if [[ "$DRY_RUN" == false ]]; then
 fi
 
 # -------------------------------------------------------
+# Migration runner
+# -------------------------------------------------------
+
+run_migrations() {{
+    # Only run if node_modules exists (project has been installed)
+    if [[ ! -d "$SCRIPT_DIR/node_modules" ]]; then
+        return 0
+    fi
+
+    # Only run if there's a database configured
+    if [[ ! -f "$SCRIPT_DIR/docker-compose.yml" ]] && [[ -z "${{DATABASE_URI:-}}" ]]; then
+        return 0
+    fi
+
+    echo "Running database migrations..."
+
+    # Check if database is reachable before running migrations
+    if command -v docker &> /dev/null && [[ -f "$SCRIPT_DIR/docker-compose.yml" ]]; then
+        # Ensure database container is running
+        if ! docker compose -f "$SCRIPT_DIR/docker-compose.yml" ps --status running 2>/dev/null | grep -q postgres; then
+            echo "  Starting database container..."
+            docker compose -f "$SCRIPT_DIR/docker-compose.yml" up -d postgres 2>/dev/null || true
+            # Wait for health check
+            for attempt in $(seq 1 10); do
+                if docker compose -f "$SCRIPT_DIR/docker-compose.yml" ps --status running 2>/dev/null | grep -q postgres; then
+                    break
+                fi
+                sleep 2
+            done
+        fi
+    fi
+
+    # Run the migration command
+    if eval "cd \\"$SCRIPT_DIR\\" && $MIGRATION_CMD" 2>&1; then
+        echo "  Migrations: OK"
+    else
+        echo "  Migrations: WARN (command failed, may need manual intervention)"
+        # Don't fail the story — the agent may not have created new migrations
+    fi
+}}
+
+# -------------------------------------------------------
 # Codex runner
 # -------------------------------------------------------
 
@@ -240,6 +394,18 @@ $(if [[ -f "$STORIES_DIR/$story_id.md" ]]; then cat "$STORIES_DIR/$story_id.md";
 - Run tests if available after implementation
 - If this is a bootstrap story, set up the project structure first
 
+## CRITICAL: Database Migrations
+
+If this story adds, removes, or modifies any collection fields, database models, 
+or schema (including adding localization to fields), you MUST:
+
+1. Make the schema change
+2. Generate a migration: `$MIGRATION_CMD:create`
+3. Run the migration: `$MIGRATION_CMD`
+4. Verify with: `$MIGRATION_CMD:status`
+
+Skipping this will cause runtime errors like "relation does not exist".
+
 ## Validation
 
 After implementation, run available validation commands (test, lint, build).
@@ -247,12 +413,12 @@ If no commands exist yet, note that in your response.
 PROMPT_EOF
 
     # Run Codex via npx
-    npx -y @openai/codex@latest exec \\
-        --model gpt-5.4 \\
-        --config 'model_reasoning_effort="xhigh"' \\
-        --sandbox danger-full-access \\
-        --json \\
-        --output-last-message "$output_file" \\
+    npx -y @openai/codex@latest exec \\\\
+        --model gpt-5.4 \\\\
+        --config 'model_reasoning_effort="xhigh"' \\\\
+        --sandbox danger-full-access \\\\
+        --json \\\\
+        --output-last-message "$output_file" \\\\
         - < "$prompt_file"
 
     local exit_code=$?
@@ -277,6 +443,90 @@ PROMPT_EOF
 }}
 
 # -------------------------------------------------------
+# Codex retry runner (includes error context)
+# -------------------------------------------------------
+
+run_codex_retry() {{
+    local story_id="$1"
+    local story_title="$2"
+    local previous_error="$3"
+    local prompt_file
+    local output_file
+
+    prompt_file="$(mktemp "$SCRIPT_DIR/.ralph-prompt.XXXXXX.md")"
+    output_file="$(mktemp "$SCRIPT_DIR/.codex-last-message.XXXXXX.txt")"
+
+    _cleanup() {{
+        rm -f "$prompt_file" "$output_file"
+    }}
+    trap _cleanup RETURN
+
+    # Build retry prompt with error context
+    cat > "$prompt_file" <<PROMPT_EOF
+# RETRY: Fix $story_id — $story_title
+
+You are RETRYING a story that failed on the previous attempt for the project **{project_name}**.
+
+## Previous Error
+
+The previous attempt failed with:
+
+\`\`\`
+$previous_error
+\`\`\`
+
+## What to do
+
+1. Read the error above carefully
+2. Identify what went wrong (build error, missing migration, type error, test failure)
+3. Fix ONLY the issue described — do not rewrite the entire story
+4. Run validation to confirm the fix works
+
+## Story
+
+$(if [[ -f "$STORIES_DIR/$story_id.md" ]]; then cat "$STORIES_DIR/$story_id.md"; else echo "Implement: $story_title"; fi)
+
+## CRITICAL: Database Migrations
+
+If the error is about missing tables or columns ("relation does not exist"):
+1. Generate a migration: `$MIGRATION_CMD:create`
+2. Run the migration: `$MIGRATION_CMD`
+
+## Validation
+
+After fixing, run: test, lint, build.
+PROMPT_EOF
+
+    # Run Codex via npx
+    npx -y @openai/codex@latest exec \\\\
+        --model gpt-5.4 \\\\
+        --config 'model_reasoning_effort="xhigh"' \\\\
+        --sandbox danger-full-access \\\\
+        --json \\\\
+        --output-last-message "$output_file" \\\\
+        - < "$prompt_file"
+
+    local exit_code=$?
+
+    if [[ -f "$output_file" ]]; then
+        local output_content
+        output_content=$(cat "$output_file")
+
+        if [[ -z "$output_content" ]] || [[ "$output_content" == *'"type":"error"'* ]]; then
+            echo "Codex returned empty or error output for $story_id (retry)"
+            return 1
+        fi
+
+        echo "$output_content"
+    else
+        echo "No output file generated for $story_id (retry)"
+        return 1
+    fi
+
+    return $exit_code
+}}
+
+# -------------------------------------------------------
 # Read execution plan
 # -------------------------------------------------------
 
@@ -294,6 +544,7 @@ fi
 
 IMPLEMENTED=0
 FAILED=0
+MAX_RETRIES=2
 
 for i in $(seq 0 $(( TOTAL - 1 ))); do
     STORY_ID=$(jq -r ".stories[$i].id" "$PLAN_FILE")
@@ -333,57 +584,131 @@ for i in $(seq 0 $(( TOTAL - 1 ))); do
     TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     echo "[$TIMESTAMP] $STORY_ID — START — $STORY_TITLE" >> "$PROGRESS_FILE"
 
-    # Run Codex
-    echo "Running codex for $STORY_ID..."
-    if run_codex "$STORY_ID" "$STORY_TITLE"; then
-        # Run validation if available
+    STORY_DONE=false
+    ATTEMPT=0
+    LAST_ERROR=""
+
+    while [[ "$STORY_DONE" == false ]] && [[ $ATTEMPT -le $MAX_RETRIES ]]; do
+        ATTEMPT=$((ATTEMPT + 1))
+
+        if [[ $ATTEMPT -gt 1 ]]; then
+            echo ""
+            echo "  ↻ Retry $((ATTEMPT - 1))/$MAX_RETRIES for $STORY_ID..."
+            TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            echo "[$TIMESTAMP] $STORY_ID — RETRY — Attempt $ATTEMPT: $LAST_ERROR" >> "$PROGRESS_FILE"
+            sleep 5
+        fi
+
+        # Run Codex
+        if [[ $ATTEMPT -eq 1 ]]; then
+            echo "Running codex for $STORY_ID..."
+        fi
+
+        CODEX_OUTPUT=""
+        if [[ $ATTEMPT -eq 1 ]]; then
+            # First attempt — normal prompt
+            if run_codex "$STORY_ID" "$STORY_TITLE"; then
+                CODEX_OUTPUT="ok"
+            fi
+        else
+            # Retry attempt — include error context in prompt
+            if run_codex_retry "$STORY_ID" "$STORY_TITLE" "$LAST_ERROR"; then
+                CODEX_OUTPUT="ok"
+            fi
+        fi
+
+        if [[ -z "$CODEX_OUTPUT" ]]; then
+            # Codex crashed
+            LAST_ERROR="Codex execution failed"
+            echo "  ✗ Codex failed (attempt $ATTEMPT)"
+
+            if [[ $ATTEMPT -gt $MAX_RETRIES ]]; then
+                TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                echo "[$TIMESTAMP] $STORY_ID — BLOCKED — Codex failed after $ATTEMPT attempts" >> "$PROGRESS_FILE"
+                FAILED=$((FAILED + 1))
+                echo ""
+                echo "[$STORY_ORDER/$TOTAL] $STORY_ID — BLOCKED (after $ATTEMPT attempts)"
+                echo ""
+                echo "Stopping: codex failed on $STORY_ID after $MAX_RETRIES retries"
+                echo "Fix the issues and run: ./ralph.sh --from $STORY_ID"
+                break 2
+            fi
+            continue
+        fi
+
+        # -------------------------------------------------------
+        # Post-story: Run migrations as safety net
+        # -------------------------------------------------------
+        run_migrations
+
+        # -------------------------------------------------------
+        # Post-story: Run validation
+        # -------------------------------------------------------
         VALIDATION_OK=true
+        VALIDATION_ERRORS=""
 
         if [[ -f "$SCRIPT_DIR/package.json" ]]; then
             echo "Running validation..."
 
-            if npm test --if-present 2>&1; then
-                echo "Tests: PASS"
-            else
+            TEST_OUTPUT=""
+            if ! TEST_OUTPUT=$(npm test --if-present 2>&1); then
                 echo "Tests: FAIL"
                 VALIDATION_OK=false
+                VALIDATION_ERRORS="Test failure: $(echo "$TEST_OUTPUT" | tail -20)"
+            else
+                echo "Tests: PASS"
             fi
 
-            if npm run lint --if-present 2>&1; then
-                echo "Lint: PASS"
-            else
+            LINT_OUTPUT=""
+            if ! LINT_OUTPUT=$(npm run lint --if-present 2>&1); then
                 echo "Lint: FAIL"
+                # Lint failures are warnings, don't block
+            else
+                echo "Lint: PASS"
+            fi
+
+            BUILD_OUTPUT=""
+            if ! BUILD_OUTPUT=$(npm run build 2>&1); then
+                echo "Build: FAIL"
+                VALIDATION_OK=false
+                if [[ -n "$VALIDATION_ERRORS" ]]; then
+                    VALIDATION_ERRORS="$VALIDATION_ERRORS | Build failure: $(echo "$BUILD_OUTPUT" | tail -20)"
+                else
+                    VALIDATION_ERRORS="Build failure: $(echo "$BUILD_OUTPUT" | tail -20)"
+                fi
+            else
+                echo "Build: PASS"
             fi
         fi
 
-        TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
         if [[ "$VALIDATION_OK" == true ]]; then
-            echo "[$TIMESTAMP] $STORY_ID — DONE — $STORY_TITLE" >> "$PROGRESS_FILE"
+            TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            if [[ $ATTEMPT -gt 1 ]]; then
+                echo "[$TIMESTAMP] $STORY_ID — DONE — $STORY_TITLE (succeeded on attempt $ATTEMPT)" >> "$PROGRESS_FILE"
+            else
+                echo "[$TIMESTAMP] $STORY_ID — DONE — $STORY_TITLE" >> "$PROGRESS_FILE"
+            fi
             echo ""
             echo "[$STORY_ORDER/$TOTAL] $STORY_ID — DONE"
             IMPLEMENTED=$((IMPLEMENTED + 1))
+            STORY_DONE=true
         else
-            echo "[$TIMESTAMP] $STORY_ID — VALIDATION — Tests failed after implementation" >> "$PROGRESS_FILE"
-            echo ""
-            echo "[$STORY_ORDER/$TOTAL] $STORY_ID — VALIDATION FAILED"
-            FAILED=$((FAILED + 1))
-            echo ""
-            echo "Stopping: validation failed on $STORY_ID"
-            echo "Fix the issues and run: ./ralph.sh --from $STORY_ID"
-            break
+            LAST_ERROR="$VALIDATION_ERRORS"
+            echo "  ✗ Validation failed (attempt $ATTEMPT)"
+
+            if [[ $ATTEMPT -gt $MAX_RETRIES ]]; then
+                TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                echo "[$TIMESTAMP] $STORY_ID — VALIDATION — Failed after $ATTEMPT attempts: $VALIDATION_ERRORS" >> "$PROGRESS_FILE"
+                FAILED=$((FAILED + 1))
+                echo ""
+                echo "[$STORY_ORDER/$TOTAL] $STORY_ID — VALIDATION FAILED (after $ATTEMPT attempts)"
+                echo ""
+                echo "Stopping: validation failed on $STORY_ID after $MAX_RETRIES retries"
+                echo "Fix the issues and run: ./ralph.sh --from $STORY_ID"
+                break 2
+            fi
         fi
-    else
-        TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        echo "[$TIMESTAMP] $STORY_ID — BLOCKED — Codex execution failed" >> "$PROGRESS_FILE"
-        FAILED=$((FAILED + 1))
-        echo ""
-        echo "[$STORY_ORDER/$TOTAL] $STORY_ID — BLOCKED"
-        echo ""
-        echo "Stopping: codex failed on $STORY_ID"
-        echo "Fix the issues and run: ./ralph.sh --from $STORY_ID"
-        break
-    fi
+    done
 done
 
 echo ""

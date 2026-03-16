@@ -162,6 +162,7 @@
         "Content collections are defined with required fields and validation",
         "Content items can be created, read, updated, and deleted via the admin",
         "Media handling is configured for image and file uploads",
+        "Database migration is generated and executed for all schema changes (run migrate:create then migrate)",
         "Payload collections are registered in payload.config.ts"
       ],
       "scope_boundaries": [
@@ -256,7 +257,8 @@
         "Database client or ORM is installed and configured",
         "Initial migration or schema setup runs without errors",
         "Connection can be verified programmatically",
-        "docker-compose.yml includes database service"
+        "docker-compose.yml includes database service",
+        "Database migration is generated and executed for all schema changes (run migrate:create then migrate)"
       ],
       "scope_boundaries": [
         "Do NOT create application tables yet — only the connection layer",
@@ -351,7 +353,8 @@
         "Users can log out and have their session invalidated",
         "Protected routes return 401 for unauthenticated requests",
         "Passwords are hashed before storage",
-        "Payload Users collection has auth enabled"
+        "Payload Users collection has auth enabled",
+        "Database migration is generated and executed for all schema changes (run migrate:create then migrate)"
       ],
       "scope_boundaries": [
         "Do NOT implement OAuth or social login in this story",
@@ -385,6 +388,7 @@
         "Permissions are enforced on protected endpoints",
         "Admin users can manage other users' roles",
         "Unauthorized role access returns 403",
+        "Database migration is generated and executed for all schema changes (run migrate:create then migrate)",
         "Payload access control functions use role checks"
       ],
       "scope_boundaries": [
@@ -416,6 +420,7 @@
         "Uploaded media is stored and retrievable via URL",
         "Media list view shows uploaded assets with thumbnails",
         "File size and type validation is enforced on upload",
+        "Database migration is generated and executed for all schema changes (run migrate:create then migrate)",
         "Payload Media collection is configured with upload settings"
       ],
       "scope_boundaries": [
@@ -446,6 +451,7 @@
         "Only authorized roles can transition content to published state",
         "Published content is visible through the appropriate surface",
         "Draft content is only visible to editors and admins",
+        "Database migration is generated and executed for all schema changes (run migrate:create then migrate)",
         "Publishing requires reviewer or admin role"
       ],
       "scope_boundaries": [
@@ -506,7 +512,8 @@
         "A background job checks for content due for publishing and publishes it",
         "Published content appears on the appropriate surface after the scheduled time",
         "Job runs reliably on a configurable interval",
-        "Failed publish attempts are logged and retried"
+        "Failed publish attempts are logged and retried",
+        "Database migration is generated and executed for all schema changes (run migrate:create then migrate)"
       ],
       "scope_boundaries": [
         "Do NOT implement a full job queue system — a simple cron-style check is sufficient",

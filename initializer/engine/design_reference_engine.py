@@ -155,7 +155,10 @@ def _build_vision_messages(images: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 
 def _call_vision_api(messages: list[dict[str, Any]], model: str = "gpt-4.1-mini") -> str:
-    """Call OpenAI vision API and return the response text."""
+    """Call OpenAI vision API and return the response text.
+
+    Includes timeout handling and a single retry on transient failures.
+    """
     from openai import OpenAI
 
     api_key = os.getenv("OPENAI_API_KEY")
@@ -165,18 +168,38 @@ def _call_vision_api(messages: list[dict[str, Any]], model: str = "gpt-4.1-mini"
             "Set it in your environment."
         )
 
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, timeout=60.0)
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": EXTRACTION_PROMPT},
-            *messages,
-        ],
-        max_tokens=4096,
-    )
+    last_error = None
+    for attempt in range(2):  # 1 attempt + 1 retry
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": EXTRACTION_PROMPT},
+                    *messages,
+                ],
+                max_tokens=4096,
+            )
 
-    return response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            if content and content.strip():
+                return content.strip()
+
+            last_error = "Empty response from API"
+            print(f"  Warning: empty API response (attempt {attempt + 1})")
+
+        except Exception as exc:
+            last_error = str(exc)
+            print(f"  Warning: API call failed (attempt {attempt + 1}): {exc}")
+
+            if attempt == 0:
+                import time
+                time.sleep(3)
+
+    # Return a minimal JSON so downstream parsing doesn't crash
+    print(f"  Design reference analysis failed after 2 attempts: {last_error}")
+    return '{"colors": {}, "layout": {}, "typography": {}, "components": [], "overall_style": "", "api_error": true}'
 
 
 def _parse_extraction(raw_text: str) -> dict[str, Any]:
@@ -201,6 +224,70 @@ def _parse_extraction(raw_text: str) -> dict[str, Any]:
             "parse_error": True,
             "raw_text": raw_text,
         }
+
+    # Validate extracted content quality
+    data = _validate_extraction(data)
+    return data
+
+
+def _validate_extraction(data: dict[str, Any]) -> dict[str, Any]:
+    """Validate and clean up extraction results.
+
+    Removes empty/placeholder values and marks quality issues.
+    """
+    quality_issues: list[str] = []
+
+    # Validate colors — must have at least primary and background
+    colors = data.get("colors", {})
+    if not isinstance(colors, dict):
+        colors = {}
+        quality_issues.append("colors was not a dict")
+
+    essential_color_keys = ("primary", "background", "text")
+    missing_colors = [k for k in essential_color_keys if not colors.get(k)]
+    if missing_colors:
+        quality_issues.append(f"missing essential colors: {', '.join(missing_colors)}")
+
+    # Remove color values that look like placeholders
+    placeholder_patterns = ("<", "your-", "TBD", "N/A", "unknown", "?")
+    cleaned_colors = {}
+    for key, value in colors.items():
+        if isinstance(value, str) and value.strip():
+            if not any(p in value for p in placeholder_patterns):
+                cleaned_colors[key] = value.strip()
+    data["colors"] = cleaned_colors
+
+    # Validate layout
+    layout = data.get("layout", {})
+    if not isinstance(layout, dict):
+        data["layout"] = {}
+
+    # Validate typography
+    typography = data.get("typography", {})
+    if not isinstance(typography, dict):
+        data["typography"] = {}
+
+    # Validate components — should be a list of strings
+    components = data.get("components", [])
+    if not isinstance(components, list):
+        data["components"] = []
+    else:
+        data["components"] = [
+            c for c in components
+            if isinstance(c, str) and c.strip()
+            and not any(p in c for p in placeholder_patterns)
+        ]
+
+    # Overall quality assessment
+    has_colors = len(cleaned_colors) >= 3
+    has_components = len(data.get("components", [])) >= 1
+    has_layout = bool(data.get("layout", {}).get("pattern"))
+
+    if not has_colors and not has_components and not has_layout:
+        quality_issues.append("extraction appears empty — API may not have understood the images")
+
+    if quality_issues:
+        data["quality_issues"] = quality_issues
 
     return data
 
@@ -244,10 +331,27 @@ def merge_reference_into_design_system(
 ) -> dict[str, Any]:
     """Merge extracted design reference tokens into the existing design system.
 
-    Reference values override generated defaults.
+    Reference values override generated defaults, but only if they pass
+    quality validation. Parse errors and low-quality extractions are
+    logged but do not overwrite good defaults.
     """
     if not reference:
         return design_system
+
+    # Skip merge if extraction had critical issues
+    if reference.get("parse_error"):
+        print("  Warning: design reference parse error — skipping merge, keeping defaults")
+        design_system.setdefault("design_reference", {})["parse_error"] = True
+        return design_system
+
+    if reference.get("api_error"):
+        print("  Warning: design reference API error — skipping merge, keeping defaults")
+        design_system.setdefault("design_reference", {})["api_error"] = True
+        return design_system
+
+    quality_issues = reference.get("quality_issues", [])
+    if quality_issues:
+        print(f"  Warning: design reference quality issues: {'; '.join(quality_issues)}")
 
     tokens = design_system.setdefault("tokens", {})
 

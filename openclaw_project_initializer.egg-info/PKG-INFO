@@ -8,659 +8,375 @@ Requires-Dist: jsonschema
 Requires-Dist: pyyaml
 Requires-Dist: openai
 
-# OpenClaw Project Initializer
+# Specwright
+
+**PRD-driven project initializer that generates executable projects for AI coding agents.**
 
-Este repositório implementa um inicializador de projetos orientado por PRD.
+Specwright turns a project idea into a **running application** that Codex, Claude Code, or any AI coding agent can extend story-by-story — with zero ambiguity about what to build.
 
-Hoje ele deve ser entendido como um projeto em modo de diagnóstico e alinhamento interno, não como um gerador finalizado ou como uma aplicação de produção. O objetivo desta iteração é preservar a ideia principal do produto enquanto reduz inconsistências de contrato entre os engines, o fluxo de CLI e os artefatos gerados.
+```
+"public site with CMS for editorial content"
+    ↓
+Specwright detects archetype, asks questions, analyzes design references
+    ↓
+Working Next.js + Payload + Postgres project
+  + spec.json, architecture.md, 18 enriched stories, ralph.sh
+    ↓
+./ralph.sh → Codex implements story-by-story → production-ready app
+```
 
-Se outro ChatGPT ou agente for continuar o trabalho daqui, este README serve como mapa rápido do que o projeto é, do que realmente está ativo no código, e de quais regras conceituais não podem ser quebradas.
+## Why
 
-## Se você é outro GPT, entenda isto primeiro
+AI coding agents are powerful but directionless. They can write code, but they don't know *what* to build. Today's workflow is: paste a vague prompt, get something half-right, spend hours correcting drift.
 
-- o comando que mais importa hoje é `initializer new`
-- o comando que valida o output atual é `initializer validate output/<slug>`
-- o modo `--assist` é opcional, conservador e pode fazer perguntas adicionais antes de fechar o `spec`
-- o cenário de referência mais confiável hoje é o editorial (`editorial-cms` com admin + public site)
-- `plan`, `doctor`, `runtime/` e `synthesis/` ainda exigem cautela
-- nunca colapse `archetype`, `capabilities`, `features` e `answers` em um único conceito
-- use `progress.txt`, `diagnosis.md`, `architecture.md` e `prd.json` como contexto obrigatório antes de mexer em contratos
+Specwright fixes this by creating a **structured execution contract** between you and the agent:
 
-## Maturidade atual
+- **Executable scaffold** — the generated project runs from day one (`npm install && docker compose up -d && npm run dev`)
+- **Enriched stories** — every story has acceptance criteria, scope boundaries, expected files, dependencies, and validation commands
+- **Domain model** — entities, states, transitions, roles, permissions, and business rules derived from the archetype
+- **Architecture contracts** — component communication, responsibility boundaries, and typical request flows
+- **Known challenges** — the AI identifies architectural problems specific to your project type and you decide how to resolve them
+- **Design references** — point to screenshots and the AI extracts colors, typography, layout, and components into your design system
+- **Signal governance** — separates what the AI inferred from what you confirmed; your answers always win
+- **Story-by-story execution** — the ralph loop feeds one story at a time to Codex, validates, records progress
 
-Leitura honesta do estado do projeto hoje:
+## The Pipeline
 
-- complexidade conceitual: intermediário a avançado
-- maturidade de implementação: MVP técnico funcional com pipeline principal operante
-- prontidão para produção: baixa a média
-- fluxo mais confiável: `initializer new`
-- principal cenário validado: `editorial-cms` com admin + public site
-- confiança atual do fluxo principal: melhor do que no início da iteração, com cobertura automatizada no repositório para unit, integration, e2e e regression
+```
+You describe a project
+    → Specwright detects the archetype (backoffice, client-portal, editorial-cms, etc.)
+    → Asks CLI questions (surface, deploy target)
+    → Runs AI-assisted discovery (follow-up questions)
+    → Presents known challenges and collects your decisions
+    → Analyzes design reference images (if provided)
+    → Generates canonical spec with confirmed signals
+    → Derives architecture, domain model, stories, constraints, risks, design system
+    → Generates executable scaffold (package.json, docker-compose, Payload config, etc.)
+    → Writes the complete execution package
 
-O projeto já tem uma ideia forte e uma modelagem de domínio clara, mas ainda convive com partes ativas e partes legadas/parciais. O foco correto não é redesign, e sim consolidação de contratos e redução de drift entre o caminho principal e os caminhos secundários.
+Optional: enrich with PRD intelligence (personas, success metrics, scope)
+Optional: edit architecture interactively (initializer architect)
+Optional: edit design system interactively (initializer design)
 
-## O que este projeto é
+Then: ./ralph.sh iterates stories through Codex CLI
+```
 
-A ideia central do repositório é:
+## Quick Start
 
-1. receber uma descrição textual de projeto via CLI
-2. detectar um `archetype`
-3. derivar `stack`, `features` e `capabilities`
-4. opcionalmente enriquecer a descoberta com uma passada assistida por IA
-5. sintetizar um `spec` canônico em memória
-6. gerar artefatos como PRD, arquitetura, stories e documentos derivados
-7. validar e refinar o resultado
+### Install
 
-O produto a preservar é um `PRD-driven project initializer`.
+```bash
+pip install -e .
+```
 
-Não transforme este repositório em:
+### Generate a project
 
-- uma aplicação SaaS
-- um CMS de produção
-- um scaffold genérico sem modelagem de domínio
-- um fluxo que colapse `archetype`, `capabilities`, `features` e `answers` em um conceito único
+```bash
+# Full interactive flow with AI discovery
+OPENAI_API_KEY=sk-... initializer new --assist
 
-## Estado atual da iteração
+# With design references
+OPENAI_API_KEY=sk-... initializer new --assist --reference ./designs/
 
-O repositório está em `understand-and-diagnose mode`.
+# Without AI (deterministic only)
+initializer new
+```
 
-Isso significa que qualquer agente deve:
+### Start the generated project
 
-1. entender o comportamento atual
-2. comparar código versus intenção documentada
-3. registrar inconsistências
-4. fazer apenas mudanças seguras e bem justificadas
+```bash
+cd output/my-project
+npm install
+docker compose up -d
+cp .env.example .env.local
+npm run dev
+# → http://localhost:3000 (frontend)
+# → http://localhost:3000/admin (Payload admin, if editorial-cms)
+```
 
-Os documentos de contexto desta iteração não são decorativos. Eles são parte do contrato de trabalho.
+### Execute with Codex
 
-## Ordem obrigatória de leitura
+```bash
+cd output/my-project
+./ralph.sh --dry-run     # preview the execution plan
+./ralph.sh               # run for real
+./ralph.sh --from ST-005 # resume from a specific story
+```
 
-Antes de qualquer mudança relevante, leia nesta ordem:
+### Full pipeline (generate + enrich + execute)
 
-1. `progress.txt`
-2. `decisions.md`
-3. `diagnosis.md`
-4. `architecture.md`
-5. `prd.json`
+```bash
+OPENAI_API_KEY=sk-... initializer run --assist --reference ./designs/
+```
 
-Depois disso, leia o código do fluxo ativo, especialmente:
+## What Gets Generated
 
-- `initializer/__main__.py`
-- `initializer/cli.py`
-- `initializer/flow/new_project.py`
-- `initializer/engine/archetype_engine.py`
-- `initializer/engine/capability_derivation.py`
-- `initializer/engine/capability_engine.py`
-- `initializer/engine/knowledge_engine.py`
-- `initializer/engine/architecture_engine.py`
-- `initializer/engine/story_engine.py`
-- `initializer/ai/refine_engine.py`
-- `initializer/validation/prd_validator.py`
-- `initializer/validation/story_coverage.py`
-
-## Conceitos canônicos do domínio
-
-Estes conceitos devem permanecer distintos:
-
-### `archetype`
-
-Classificação do tipo de produto.
-
-Exemplos atuais:
-
-- `editorial-cms`
-- `marketplace`
-- `saas-app`
-- `generic-web-app`
-
-Responsabilidade:
-
-- definir identidade canônica
-- fornecer stack padrão
-- fornecer features padrão
-- opcionalmente fornecer capabilities padrão
-
-### `capability`
-
-Enriquecimento arquitetural ou de plataforma.
-
-Exemplos atuais:
-
-- `cms`
-- `public-site`
-- `scheduled-jobs`
-- `i18n`
-
-Responsabilidade:
-
-- adicionar decisions de arquitetura
-- adicionar componentes de arquitetura
-- semear stories
-- alimentar constraints, risks e outros artefatos derivados
-
-### `feature`
-
-Funcionalidade de produto esperada no planejamento gerado.
-
-Exemplos atuais:
-
-- `authentication`
-- `roles`
-- `media-library`
-- `draft-publish`
-- `preview`
-- `scheduled-publishing`
-
-Responsabilidade:
-
-- influenciar geração de stories
-- influenciar arquitetura
-- influenciar cobertura e validação
-
-### `answers`
-
-Respostas estruturadas do CLI.
-
-Exemplos atuais:
-
-- `project_name`
-- `project_slug`
-- `summary`
-- `surface`
-- `deploy_target`
-
-Importante: `answers` não são equivalentes a `archetype` nem a `capabilities`. Se houver relação, ela deve ser derivada explicitamente.
-
-## Contrato canônico do `spec`
-
-O `spec` é a estrutura em memória compartilhada pela pipeline.
-
-Campos mínimos ativos hoje:
-
-- `prompt`
-- `archetype`
-- `archetype_data`
-- `stack`
-- `features`
-- `capabilities`
-- `architecture`
-- `stories`
-- `answers`
-
-Campos derivados que o fluxo `new` atual também popula:
-
-- `constraints`
-- `design_system`
-- `risks`
-- `diagram`
-
-Campo opcional quando o modo assistido por IA está ligado:
-
-- `discovery`
-
-Campos relevantes dentro de `discovery` no estado atual:
-
-- `decision_signals`
-- `additional_questions`
-- `followup_answers`
-- `assumptions`
-- `open_questions`
-- `deployment_considerations`
-- `conflicts`
-- `applied_answer_updates`
-- `applied_capability_candidates`
-- `removed_capabilities`
-- `applied_feature_candidates`
-
-## Fluxo ativo confirmado no código
-
-O entrypoint principal é:
-
-- `python -m initializer`
-- ou o script `initializer` definido em `pyproject.toml`
-
-Subcomandos expostos:
-
-- `new`
-- `plan`
-- `refine`
-- `doctor`
-- `validate`
-
-Observação importante:
-
-- `new` é o caminho principal e o mais alinhado com a pipeline atual
-- `new --assist` ativa uma descoberta assistida por IA com possível rodada de perguntas adicionais
-- `plan`, `doctor` e partes da camada `runtime/` ainda exigem cautela porque não estão no mesmo nível de alinhamento do fluxo principal
-- `validate` é o comando correto para checar `spec.json` gerado pelo fluxo atual
-- `validate` depende de `jsonschema` instalado no ambiente
-
-O caminho realmente confirmado e alinhado com a pipeline principal hoje é o `new`.
-
-Fluxo ativo:
-
-1. `initializer/__main__.py` chama `initializer.cli.main()`
-2. `initializer.cli.main()` roteia o subcomando
-3. `initializer new` chama `initializer.flow.new_project.run_new_project()`
-4. `run_new_project()` executa a pipeline abaixo
-
-Pipeline real de `initializer new`:
-
-1. pede a descrição livre do projeto
-2. chama `build_initial_spec(prompt)`
-3. `build_initial_spec()` chama `detect_archetype(prompt)`
-4. coleta respostas estruturadas do usuário
-5. opcionalmente roda uma primeira passada de descoberta assistida por IA se `--assist` estiver ligado
-6. se a descoberta retornar perguntas adicionais, coleta respostas estruturadas de follow-up
-7. se houver respostas de follow-up, roda uma segunda passada de descoberta com o contexto enriquecido
-8. deriva capabilities a partir de `archetype_data`, `spec["archetype"]`, `spec["answers"]` e sinais de descoberta
-9. aplica handlers de capability
-10. aplica conhecimento arquitetural adicional
-11. gera arquitetura consolidada
-12. gera stories consolidadas
-13. refina o spec
-14. deriva `constraints`, `design_system`, `risks` e `diagram`
-15. roda validação estrutural e checagem de cobertura de stories
-16. escreve artefatos em `output/<project_slug>/`
-
-## Perguntas do CLI no fluxo `new`
-
-Hoje o CLI pergunta, nesta ordem:
-
-1. `Describe the project`
-2. `Project name`
-3. `Project slug`
-4. `One sentence summary`
-5. `Choose product surface`
-6. `Choose deploy target`
-
-Valores estruturados atuais:
-
-- `surface`
-  - `internal_admin_only`
-  - `admin_plus_public_site`
-- `deploy_target`
-  - `docker`
-  - `docker_and_k8s_later`
-
-Flags atualmente expostas em `initializer new`:
-
-- `--assist`
-  - habilita descoberta assistida por IA antes da derivação final do spec
-- `--spec`
-  - existe no CLI, mas hoje não é o centro do fluxo interativo principal e deve ser tratado com cautela
-
-## Derivação atual de archetype, features e capabilities
-
-### Archetype
-
-O detector ativo está em `initializer/engine/archetype_engine.py`.
-
-Ele retorna um objeto com:
-
-- `id`
-- `name`
-- `stack`
-- `features`
-- `capabilities`
-
-Mapeamento atual:
-
-- prompt editorial ou CMS -> `editorial-cms`
-- prompt marketplace -> `marketplace`
-- prompt SaaS -> `saas-app`
-- fallback -> `generic-web-app`
-
-### Features
-
-As features padrão atualmente vêm do `archetype`.
-
-Exemplo importante:
-
-- `editorial-cms` traz `authentication`, `roles`, `media-library`, `draft-publish`, `preview` e `scheduled-publishing`
-
-### Capabilities
-
-O fluxo ativo usa `initializer/engine/capability_derivation.py`.
-
-Hoje ele deriva capabilities por estas fontes:
-
-1. defaults do `archetype`
-2. respostas estruturadas
-3. capabilities já existentes no spec
-
-Derivações ativas e confirmadas:
-
-- `editorial-cms` inclui `cms`
-- `surface == admin_plus_public_site` adiciona `public-site`
-
-Derivações suportadas pelo motor, mas não expostas diretamente no questionário atual:
-
-- `scheduled-jobs`
-- `i18n`
-
-Essas duas ainda dependem de respostas mais ricas no `answers` ou de um `spec` alimentado por outro caminho.
-
-## Descoberta assistida por IA
-
-O fluxo principal agora tem um passo opcional de descoberta assistida:
-
-- implementado em `initializer/ai/discovery_engine.py`
-- consolidado em `initializer/ai/discovery_merge.py`
-- ativado por `initializer new --assist`
-
-Objetivo desse passo:
-
-- enriquecer respostas
-- sugerir capabilities candidatas válidas
-- sugerir features candidatas válidas
-- produzir `decision_signals` estruturados
-- registrar `assumptions`, `open_questions`, `additional_questions`, `deployment_considerations` e `conflicts`
-- fazer isso sem substituir o `spec` canônico de maneira arbitrária
-
-Regras importantes desse merge:
-
-- não reescreve `archetype`
-- não reescreve `stack`
-- preserva `archetype_data` como referência principal
-- pode enriquecer `answers`, `capabilities`, `features` e `discovery` de forma conservadora
-- pode reconciliar capabilities quando os `decision_signals` ou respostas de follow-up contradizem inferências anteriores
-
-Dependências e ambiente:
-
-- usa o pacote `openai`
-- usa `OPENAI_API_KEY`
-- o cliente atual usa `gpt-4.1-mini` para essa passada de descoberta
-
-Comportamento interativo atual:
-
-- a primeira passada pode retornar objetos de pergunta estruturados
-- o CLI coleta essas respostas no terminal
-- as respostas ficam em `discovery.followup_answers`
-- se houve respostas novas, a descoberta é executada novamente antes da derivação final
-
-Esse modo deve ser entendido como camada auxiliar e conservadora, não como fonte principal isolada da verdade do projeto.
-
-## Engines principais e papéis reais
-
-### `archetype_engine`
-
-Detecta o archetype e fornece os defaults.
-
-### `capability_derivation`
-
-Normaliza e deriva `spec["capabilities"]` a partir de archetype e respostas.
-
-### `capability_engine`
-
-Itera `spec["capabilities"]` e aplica handlers registrados em `initializer/engine/capability_registry.py`.
-
-Handlers atuais:
-
-- `initializer/capabilities/cms.py`
-- `initializer/capabilities/public_site.py`
-- `initializer/capabilities/scheduled_jobs.py`
-- `initializer/capabilities/i18n.py`
-
-### `knowledge_engine`
-
-Acrescenta decisions baseadas em stack e features.
-
-### `architecture_engine`
-
-Gera a arquitetura final preservando e mesclando enriquecimentos anteriores.
-
-Resultado típico:
-
-- `frontend`
-- `api`
-- `database`
-- `object-storage`
-- `worker`
-- `cdn`
-
-### `story_engine`
-
-Gera stories canônicas e faz `upsert` por `story_key` ou por título quando possível.
-
-### `refine_engine`
-
-Acrescenta refinamentos heurísticos ao PRD e stories operacionais fixas, incluindo:
-
-- `ST-900`
-- `ST-901`
-
-### Engines derivados
-
-O fluxo `new` atual também chama:
-
-- `constraint_engine`
-- `design_system_engine`
-- `risk_engine`
-- `architeture_diagram_engine`
-
-Esses engines alimentam documentos adicionais no diretório de output.
-
-### Camada de IA
-
-Também existe uma camada auxiliar em `initializer/ai/` com dois papéis diferentes:
-
-- descoberta assistida para enriquecer entrada sem substituir o spec
-- refinamento heurístico posterior via `refine_engine`
-
-## Estrutura de saída do fluxo `new`
-
-Para um projeto com slug `my-project`, o fluxo atual escreve:
-
-```text
+```
 output/my-project/
-  spec.json
-  PRD.md
-  architecture.md
-  stories/
-    ST-001.md
-    ...
-  docs/
-    constraints.md
-    design-system.md
-    risks.md
-    architecture/
-      diagram.mmd
+├── package.json                 # dependencies and npm scripts (ready to install)
+├── docker-compose.yml           # postgres with health check
+├── Dockerfile                   # multi-stage production build
+├── .env.example                 # all environment variables
+├── tsconfig.json                # TypeScript config
+├── next.config.ts               # Next.js config (with Payload if editorial-cms)
+├── src/
+│   ├── app/                     # Next.js app router
+│   │   ├── layout.tsx
+│   │   ├── page.tsx
+│   │   ├── globals.css
+│   │   └── (payload)/           # Payload admin routes (if editorial-cms)
+│   ├── payload.config.ts        # Payload config (if editorial-cms)
+│   ├── collections/             # Payload collections (Users, etc.)
+│   ├── lib/                     # shared utilities
+│   └── components/              # UI components
+├── spec.json                    # structured source of truth
+├── PRD.md                       # product requirements
+├── architecture.md              # components, communication, boundaries, request flows
+├── decisions.md                 # architectural decisions
+├── progress.txt                 # append-only execution log
+├── ralph.sh                     # story-by-story Codex runner
+├── .codex/
+│   └── AGENTS.md                # instructions for Codex CLI
+├── .openclaw/
+│   ├── AGENTS.md                # instructions for OpenClaw
+│   ├── OPENCLAW.md              # handoff document
+│   ├── execution-plan.json      # ordered stories with phases and dependencies
+│   ├── manifest.json            # project metadata
+│   ├── repo-contract.json       # contract rules
+│   └── commands.json            # validation commands (pre-populated from stack)
+└── docs/
+    ├── stories/
+    │   ├── ST-001.md ... ST-018.md  # enriched stories with acceptance criteria
+    ├── constraints.md
+    ├── design-system.md
+    ├── risks.md
+    └── architecture/
+        └── diagram.mmd
 ```
 
-Referência validada nesta iteração:
+## Enriched Stories
 
-- `output/st012-editorial-validation/`
+Every story includes:
 
-Esse diretório registra o caso editorial principal que foi usado como validação de ponta a ponta da pipeline atual.
+```markdown
+# ST-011 — Implement authentication
 
-## Cenário de referência mais importante
+**Story key:** `feature.authentication`
 
-O principal cenário de referência deste repositório hoje é o editorial.
+## Acceptance Criteria
+- [ ] Users can register with email and password
+- [ ] Users can log in and receive a valid session
+- [ ] Protected routes return 401 for unauthenticated requests
+- [ ] Passwords are hashed before storage
+- [ ] Payload Users collection has auth enabled
 
-Prompt de referência:
+## Scope Boundaries
+- Do NOT implement OAuth or social login in this story
+- Do NOT implement password reset or email verification
 
-`Editorial CMS with admin panel, public website, media library, preview, and scheduled publishing for articles`
+## Expected Files
+- `src/lib/auth.ts`
+- `src/collections/Users.ts`
+- `src/app/(auth)/login/page.tsx`
 
-Resultado esperado de alto nível no fluxo ativo:
+## Dependencies
+- `bootstrap.backend`
+- `bootstrap.frontend`
 
-- `archetype == editorial-cms`
-- `capabilities == ['cms', 'public-site']`
-- stack `nextjs + payload + postgres`
-- componentes como `cdn`, `frontend`, `api`, `database`, `object-storage`, `worker`
-- conjunto coerente de stories de bootstrap, features e operação
+## Validation
+- Run: `npm run build`
+- Run: `npm test`
+- Manual: Can register, log in, and access protected route
+```
 
-## O que está validado versus o que ainda parece parcial
+## Domain Model
 
-### Fluxo mais confiável hoje
+Specwright derives a complete domain model from the archetype:
 
-- `initializer new`
-- `initializer new --assist` quando há `OPENAI_API_KEY` e a equipe quer enriquecer a descoberta sem abrir mão do contrato canônico
-- `initializer validate output/<slug>` para validar `spec.json` do fluxo atual
-- `build_initial_spec()`
-- `detect_archetype()`
-- derivação explícita de capabilities
-- aplicação de capability handlers
-- geração de arquitetura
-- geração de stories
-- derivação de constraints, design system, risks e diagram
-- escrita em `output/<slug>/`
+- **Entities** with fields, states, and valid transitions (e.g., Article: draft → in_review → published → archived)
+- **Roles** with concrete permissions (e.g., editor can create_article, submit_for_review)
+- **Auth model** derived from the backend (Payload auth, Django auth, custom JWT)
+- **Business rules** (e.g., "Only reviewers can approve content for publication")
 
-### Áreas que outro agente deve tratar com cautela
+## Known Challenges
 
-Existem módulos que parecem legados, paralelos ou apenas parcialmente alinhados com o fluxo ativo:
+During `--assist`, Specwright identifies architectural problems specific to your project and asks how you want to resolve them:
 
-- `initializer/runtime/`
-- `initializer/synthesis/`
-- `initializer/graph/story_graph.py`
-- `initializer/flow/plan_project.py`
-- parte dos `renderers/`, porque o fluxo `new` atual mistura writers inline com renderers dedicados
+```
+🔍 Known Challenges for Your Project
 
-Pontos importantes:
+Challenge 1/7: Cache Invalidation
+  When content is published, cached public pages may show stale content.
 
-- `initializer/flow/plan_project.py` referencia `collect_input` e `render_decisions` em `initializer.flow.new_project`, mas esses símbolos não existem hoje nesse módulo
-- `doctor` valida uma estrutura de projeto diferente da que `new` escreve atualmente
-- `validate` depende de `jsonschema`, que está em `pyproject.toml`, mas precisa estar instalado no ambiente
-- `new` expõe `--spec`, mas o caminho principal continua sendo interativo e o parâmetro não aparece como elemento central no fluxo atual
+  a) On-demand ISR revalidation (recommended)
+  b) Short TTL caching
+  c) Full static regeneration
+  s) Skip
+  c) Custom
 
-Em outras palavras: o repositório tem um caminho principal funcional e caminhos secundários que ainda não compartilham o mesmo contrato com o mesmo grau de confiança.
+  Your choice [a]: a
+  → On-demand ISR revalidation
 
-## Inconsistências e limites conhecidos
+✅ 5 decision(s) added to architecture.
+```
 
-Outro agente precisa saber destas tensões atuais antes de mexer no código:
+Challenges by archetype: cache invalidation, preview vs production, SEO vs auth routes, media storage, content versioning, tenant isolation, payment flows, approval models, and more.
 
-1. O projeto melhorou o contrato canônico do fluxo `new`, mas ainda existem módulos antigos com semântica diferente.
-2. Nem toda capability suportada pelo registry é produzida automaticamente pelo questionário atual.
-3. Os handlers de capability ainda não usam exatamente a mesma estratégia de identidade e merge que os geradores canônicos.
-4. A cobertura de capability em `initializer/validation/story_coverage.py` ainda é baseada em busca textual simples dentro da descrição da story.
-5. Existem dois estilos de escrita de artefatos no repositório:
-   - writers inline no fluxo `new`
-   - renderers dedicados em `initializer/renderers/`
+## Design References
 
-Isso não invalida o projeto, mas significa que mudanças amplas sem diagnóstico podem reintroduzir drift rapidamente.
-
-## Mapa do repositório
-
-Diretórios mais importantes:
-
-- `initializer/flow/`
-  - orquestração dos subcomandos
-- `initializer/engine/`
-  - motores centrais de derivação e síntese
-- `initializer/capabilities/`
-  - handlers por capability
-- `initializer/validation/`
-  - validações do spec e cobertura de stories
-- `initializer/renderers/`
-  - renderização e escrita de docs auxiliares
-- `initializer/runtime/`
-  - caminho alternativo para semantic spec
-- `initializer/synthesis/`
-  - fluxo mais antigo de síntese
-- `tests/`
-  - cobertura automatizada organizada em `unit`, `integration`, `e2e` e `regression`
-- `output/`
-  - artefatos gerados e exemplos de referência
-- `contracts/` e `schemas/`
-  - contratos auxiliares e schema
-
-Documentos raiz mais importantes:
-
-- `AGENTS.md`
-- `progress.txt`
-- `decisions.md`
-- `diagnosis.md`
-- `architecture.md`
-- `prd.json`
-
-## Regras de trabalho para outro agente
-
-Se você estiver continuando este projeto, siga estas regras:
-
-1. Preserve a identidade do produto como inicializador PRD-driven.
-2. Não colapse `archetype`, `capabilities`, `features` e `answers`.
-3. Compare sempre documentação e implementação.
-4. Considere o fluxo `initializer new` como a fonte principal de comportamento atual.
-5. Trate `runtime/`, `synthesis/` e alguns subcomandos secundários como áreas que exigem verificação antes de confiar.
-6. Registre descobertas e mudanças em `progress.txt`.
-7. Não faça refatorações largas sem antes explicar qual contrato existente está quebrado.
-
-## Testes e validação
-
-O repositório agora contém uma suíte de testes em:
-
-- `tests/unit/`
-- `tests/integration/`
-- `tests/e2e/`
-- `tests/regression/`
-
-Essa suíte cobre, pelo menos no estado atual do repositório:
-
-- contrato canônico do spec
-- archetype e capability derivation
-- merge de descoberta assistida
-- composição de arquitetura e stories
-- geração editorial ponta a ponta
-- validação de `spec.json`
-- regressões importantes do fluxo editorial
-
-Observação importante sobre ambiente:
-
-- `pytest` não está listado nas dependências de runtime em `pyproject.toml`
-- para contribuir localmente, trate `pytest` como dependência de desenvolvimento a instalar manualmente
-- o último registro em `progress.txt` aponta uma suíte com 24 testes passando, mas essa afirmação pertence ao último ciclo validado, não a qualquer ambiente novo automaticamente
-
-## Como rodar
-
-Instalação local recomendada:
+Point Specwright to screenshots of designs you want to match:
 
 ```bash
-python -m pip install -e .
+initializer new --assist --reference ./designs/
+# or
+initializer design output/my-project --reference ./designs/
 ```
 
-Instalação recomendada para desenvolvimento com testes:
+The AI analyzes the images and extracts colors (mapped to Tailwind), layout patterns, typography, and detected components into your design system. The agent then implements with those exact tokens.
+
+## Commands
 
 ```bash
-python -m pip install -e .
-python -m pip install pytest
+# Generate
+initializer new [--assist] [--spec path] [--reference dir]
+
+# Full pipeline (generate + enrich + execute)
+initializer run [--assist] [--reference dir] [--dry-run] [--no-execute]
+
+# Enrich with PRD intelligence
+initializer enrich <path> [--review]
+
+# Edit architecture interactively
+initializer architect <path>
+
+# Edit design system interactively
+initializer design <path> [--reference dir]
+
+# Validate a generated project
+initializer validate <path>
 ```
 
-Ver ajuda:
+## Supported Archetypes
+
+| Archetype | Detected from | Default stack | Default features |
+|-----------|--------------|---------------|-----------------|
+| `editorial-cms` | "cms", "editorial", "blog" | nextjs + payload + postgres | auth, roles, media-library, draft-publish, preview, scheduled-publishing |
+| `marketplace` | "marketplace", "ecommerce" | nextjs + node-api + postgres | auth, payments, search, reviews, notifications |
+| `saas-app` | "saas", "subscription" | nextjs + node-api + postgres | auth, roles, billing, analytics, notifications |
+| `backoffice` | "backoffice", "operations team" | nextjs + node-api + postgres | auth, roles, api |
+| `client-portal` | "client portal", "approvals" | nextjs + node-api + postgres | auth, roles, notifications, api |
+| `work-organizer` | "task management", "organize work" | nextjs + node-api + postgres | auth, roles, api |
+| `knowledge-base` | "wiki", "documentation" | nextjs + node-api + postgres | auth, search, api |
+| `generic-web-app` | fallback | nextjs + node-api + postgres | auth, api |
+
+## Signal Governance
+
+Specwright distinguishes between:
+
+| Signal type | Source | Priority |
+|-------------|--------|----------|
+| **Inferred** | AI discovery engine | Low |
+| **Confirmed** | Your followup answers | High |
+| **Effective** | Merged result | Used by all engines |
+
+Your confirmed answers always override AI inference. If you say "no CMS", CMS is removed from capabilities, architecture, design system, risks — everywhere.
+
+## Architecture
+
+The system is a pipeline of deterministic engines with optional AI layers:
+
+```
+prompt → archetype_engine → capability_derivation → capability_engine
+    → challenges_engine (--assist) → knowledge_engine
+    → architecture_engine → story_engine → refine_engine
+    → domain_model_engine → project_structure_engine
+    → constraint_engine → design_system_engine → design_reference_engine
+    → risk_engine → diagram_engine
+    → scaffold_engine → writers → output
+```
+
+AI enters at three points:
+1. **Discovery** (`--assist`) — before capability derivation, to refine the spec
+2. **Challenges** (`--assist`) — after capabilities, to identify and resolve known problems
+3. **Design references** (`--reference`) — to extract visual tokens from screenshots
+
+The AI never replaces the deterministic pipeline. It refines inputs to it.
+
+## Testing
 
 ```bash
-python -m initializer --help
+pip install pytest
+python -m pytest tests -q
 ```
 
-Executar o fluxo principal:
+157+ tests covering: archetype detection, capability derivation, signal governance, story generation (enriched fields, dependencies, stack-aware paths), architecture engine (communication, boundaries), domain model (entities by archetype, roles, business rules), project structure (Node/Python/Go), challenges engine (per-archetype challenges, decisions), bundle generation (stack-aware commands), and e2e editorial pipeline.
+
+## Requirements
+
+- Python 3.11+
+- `OPENAI_API_KEY` for `--assist`, `--reference`, and `enrich --review`
+- Node.js 22+ for generated projects
+- Docker for database services
+- npx + jq for `ralph.sh` (Codex CLI)
+
+---
+
+## PT-BR
+
+### O que é o Specwright
+
+Specwright é um inicializador de projetos que gera **aplicações executáveis** para agentes de IA. Você descreve um projeto em texto livre, ele detecta o tipo, faz perguntas inteligentes, analisa referências visuais, identifica problemas arquiteturais, e gera um projeto completo que roda com `npm install && docker compose up -d && npm run dev`.
+
+### Por que isso importa
+
+Agentes de IA são poderosos mas não sabem *o que* construir. O Specwright cria um **contrato de execução estruturado**: spec canônico, modelo de domínio com entidades e estados, stories enriquecidas com critérios de aceite, arquitetura com contratos de comunicação, scope boundaries claros, e scaffold executável. O agente recebe uma story de cada vez e sabe exatamente o que fazer e o que não fazer.
+
+### Fluxo
+
+```
+Você descreve o projeto
+    → Specwright detecta o archetype
+    → Faz perguntas no CLI
+    → Roda discovery assistida por IA
+    → Apresenta desafios conhecidos e coleta suas decisões
+    → Analisa referências visuais (se fornecidas)
+    → Gera spec refinado com sinais confirmados
+    → Gera scaffold executável (package.json, docker-compose, Payload config)
+    → Deriva architecture, domain model, stories, constraints, risks, design system
+    → Escreve o pacote de execução
+
+Depois: ./ralph.sh itera stories pelo Codex CLI
+```
+
+### Como usar
 
 ```bash
-python -m initializer new
+pip install -e .
+
+# Pipeline completo com discovery e referências visuais
+OPENAI_API_KEY=sk-... initializer run --assist --reference ./designs/
+
+# Gerar projeto com discovery assistida
+OPENAI_API_KEY=sk-... initializer new --assist
+
+# Editar arquitetura interativamente
+initializer architect output/meu-projeto
+
+# Editar design system interativamente
+initializer design output/meu-projeto --reference ./designs/
+
+# Rodar com Codex
+cd output/meu-projeto
+./ralph.sh --dry-run
+./ralph.sh
 ```
 
-Executar o fluxo principal com descoberta assistida por IA:
+### Governança de sinais
 
-```bash
-OPENAI_API_KEY=... python -m initializer new --assist
-```
+O Specwright separa sinais inferidos pela IA de sinais confirmados por você. Suas respostas sempre vencem. Se você diz "sem CMS", CMS é removido de capabilities, architecture, design system, risks — em todo lugar.
 
-Validar um output gerado:
+---
 
-```bash
-python -m initializer validate output/<project-slug>
-```
+## License
 
-Rodar a suíte de testes:
-
-```bash
-pytest
-```
-
-Observações:
-
-- o comando `validate` importa `jsonschema`; se o ambiente não estiver com as dependências instaladas, ele vai falhar antes da validação
-- o modo `--assist` depende de `OPENAI_API_KEY`
-- a suíte local depende de `pytest`
-
-## O que um outro ChatGPT deve lembrar em uma frase
-
-Este repositório não é um scaffold genérico: ele é um inicializador orientado por PRD, com pipeline baseada em engines especializadas, um fluxo principal hoje centrado em `initializer new` e uma camada opcional de descoberta assistida por IA, devendo ser evoluído por alinhamento de contratos, não por redesign do produto.
+MIT

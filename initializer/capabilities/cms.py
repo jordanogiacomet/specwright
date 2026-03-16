@@ -34,6 +34,7 @@ def apply_cms(spec, architecture, stories):
         "Content collections are defined with required fields and validation",
         "Content items can be created, read, updated, and deleted via the admin",
         "Media handling is configured for image and file uploads",
+        "Database migration is generated and executed for all schema changes (run migrate:create then migrate)",
     ]
 
     expected_files = []
