@@ -1,0 +1,39 @@
+{
+  "project_root_type": "generated-project-package",
+  "project_slug": "public-site-with-cms-design",
+  "app_shape": "content-platform",
+  "primary_audience": "mixed",
+  "capabilities": [
+    "cms",
+    "public-site",
+    "i18n",
+    "scheduled-jobs"
+  ],
+  "features": [
+    "authentication",
+    "roles",
+    "media-library",
+    "draft-publish",
+    "preview",
+    "scheduled-publishing"
+  ],
+  "source_of_truth": [
+    "spec.json",
+    "PRD.md",
+    "decisions.md",
+    "progress.txt",
+    "architecture.md",
+    "docs/stories",
+    ".openclaw/execution-plan.json",
+    ".openclaw/AGENTS.md"
+  ],
+  "execution_mode": "story-by-story",
+  "primary_input": "spec.json",
+  "policies": {
+    "one_story_at_a_time": true,
+    "must_validate_before_done": true,
+    "append_progress": true,
+    "avoid_architecture_drift": true,
+    "follow_phase_order": true
+  }
+}

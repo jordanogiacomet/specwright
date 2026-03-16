@@ -1,0 +1,36 @@
+{
+  "name": "editorial-e2e-test",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Editorial E2E Test",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "echo \"No tests configured yet\" && exit 0",
+    "typecheck": "tsc --noEmit",
+    "generate:types": "payload generate:types"
+  },
+  "dependencies": {
+    "next": "15.4.11",
+    "react": "^19",
+    "react-dom": "^19",
+    "@payloadcms/next": "^3",
+    "@payloadcms/richtext-lexical": "^3",
+    "@payloadcms/db-postgres": "^3",
+    "payload": "^3",
+    "graphql": "^16",
+    "sharp": "^0.33"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.4.11",
+    "tailwindcss": "^4",
+    "@tailwindcss/postcss": "^4"
+  }
+}

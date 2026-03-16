@@ -1,0 +1,244 @@
+{
+  "total_stories": 19,
+  "phases": [
+    "bootstrap",
+    "features",
+    "product",
+    "domain",
+    "automation",
+    "operations"
+  ],
+  "phase_order": [
+    {
+      "phase": "bootstrap",
+      "description": "Project setup and infrastructure",
+      "count": 4
+    },
+    {
+      "phase": "features",
+      "description": "Core feature implementation",
+      "count": 10
+    },
+    {
+      "phase": "product",
+      "description": "Product shell and navigation",
+      "count": 1
+    },
+    {
+      "phase": "domain",
+      "description": "Domain-specific work features",
+      "count": 0
+    },
+    {
+      "phase": "automation",
+      "description": "Background jobs and automation",
+      "count": 2
+    },
+    {
+      "phase": "operations",
+      "description": "Monitoring, backups, operational setup",
+      "count": 2
+    }
+  ],
+  "stories": [
+    {
+      "id": "ST-007",
+      "title": "Initialize project repository",
+      "status": "pending",
+      "story_key": "bootstrap.repository",
+      "order": 1,
+      "phase": "bootstrap"
+    },
+    {
+      "id": "ST-008",
+      "title": "Setup database",
+      "status": "pending",
+      "story_key": "bootstrap.database",
+      "depends_on": [
+        "bootstrap.repository"
+      ],
+      "order": 2,
+      "phase": "bootstrap"
+    },
+    {
+      "id": "ST-009",
+      "title": "Setup backend service",
+      "status": "pending",
+      "story_key": "bootstrap.backend",
+      "depends_on": [
+        "bootstrap.database"
+      ],
+      "order": 3,
+      "phase": "bootstrap"
+    },
+    {
+      "id": "ST-010",
+      "title": "Create frontend application",
+      "status": "pending",
+      "story_key": "bootstrap.frontend",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 4,
+      "phase": "bootstrap"
+    },
+    {
+      "id": "ST-001",
+      "title": "Define CMS content model",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 5,
+      "phase": "features"
+    },
+    {
+      "id": "ST-002",
+      "title": "Configure CDN",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.frontend"
+      ],
+      "order": 6,
+      "phase": "features"
+    },
+    {
+      "id": "ST-003",
+      "title": "Add locale support",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 7,
+      "phase": "features"
+    },
+    {
+      "id": "ST-004",
+      "title": "Implement locale routing",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.frontend"
+      ],
+      "order": 8,
+      "phase": "features"
+    },
+    {
+      "id": "ST-011",
+      "title": "Implement authentication",
+      "status": "pending",
+      "story_key": "feature.authentication",
+      "depends_on": [
+        "bootstrap.backend",
+        "bootstrap.frontend"
+      ],
+      "order": 9,
+      "phase": "features"
+    },
+    {
+      "id": "ST-012",
+      "title": "Implement role-based access control",
+      "status": "pending",
+      "story_key": "feature.roles",
+      "depends_on": [
+        "feature.authentication"
+      ],
+      "order": 10,
+      "phase": "features"
+    },
+    {
+      "id": "ST-013",
+      "title": "Implement media library",
+      "status": "pending",
+      "story_key": "feature.media-library",
+      "depends_on": [
+        "feature.authentication"
+      ],
+      "order": 11,
+      "phase": "features"
+    },
+    {
+      "id": "ST-014",
+      "title": "Implement draft and publish workflow",
+      "status": "pending",
+      "story_key": "feature.draft-publish",
+      "depends_on": [
+        "feature.roles"
+      ],
+      "order": 12,
+      "phase": "features"
+    },
+    {
+      "id": "ST-015",
+      "title": "Implement content preview",
+      "status": "pending",
+      "story_key": "feature.preview",
+      "depends_on": [
+        "feature.draft-publish"
+      ],
+      "order": 13,
+      "phase": "features"
+    },
+    {
+      "id": "ST-016",
+      "title": "Implement scheduled publishing",
+      "status": "pending",
+      "story_key": "feature.scheduled-publishing",
+      "depends_on": [
+        "feature.draft-publish"
+      ],
+      "order": 14,
+      "phase": "features"
+    },
+    {
+      "id": "ST-017",
+      "title": "Build content platform shell",
+      "status": "pending",
+      "story_key": "product.content-platform-shell",
+      "depends_on": [
+        "feature.authentication"
+      ],
+      "order": 15,
+      "phase": "product"
+    },
+    {
+      "id": "ST-005",
+      "title": "Setup job worker",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 16,
+      "phase": "automation"
+    },
+    {
+      "id": "ST-006",
+      "title": "Implement publishing scheduler",
+      "status": "pending",
+      "depends_on": [
+        "feature.draft-publish"
+      ],
+      "order": 17,
+      "phase": "automation"
+    },
+    {
+      "id": "ST-900",
+      "title": "Setup monitoring and logging",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 18,
+      "phase": "operations"
+    },
+    {
+      "id": "ST-901",
+      "title": "Implement backups",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.database"
+      ],
+      "order": 19,
+      "phase": "operations"
+    }
+  ]
+}

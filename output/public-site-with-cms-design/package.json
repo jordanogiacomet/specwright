@@ -1,0 +1,39 @@
+{
+  "name": "public-site-with-cms-design",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bootstrap for a public site with Payload CMS and Postgres",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:check": "node --eval \"import('./src/lib/db.ts').then(async ({ closeDatabasePool, verifyDatabaseConnection }) => { const result = await verifyDatabaseConnection(); console.log(JSON.stringify(result, null, 2)); await closeDatabasePool(); }).catch((error) => { console.error(error); process.exit(1); })\"",
+    "db:migrate": "payload migrate",
+    "db:status": "payload migrate:status",
+    "lint": "eslint . --max-warnings=0",
+    "test": "node -e \"console.log('No tests configured yet')\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@payloadcms/db-postgres": "3.79.1",
+    "@payloadcms/next": "3.79.1",
+    "graphql": "16.13.1",
+    "next": "15.4.11",
+    "pg": "8.16.3",
+    "payload": "3.79.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "3.3.5",
+    "@types/node": "25.5.0",
+    "@types/pg": "8.10.2",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.4",
+    "eslint-config-next": "15.4.11",
+    "eslint-config-prettier": "10.1.8",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  }
+}

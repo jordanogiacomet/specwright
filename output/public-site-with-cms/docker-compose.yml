@@ -1,0 +1,47 @@
+# Docker Compose for Public site with cms
+# Start: docker compose up -d
+# Stop:  docker compose down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-public_site_with_cms}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-public_site_with_cms}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      BACKUP_POSTGRES_HOST: postgres
+      BACKUP_POSTGRES_PORT: 5432
+      BACKUP_DIR: ${BACKUP_DIR:-/backups}
+      BACKUP_PREFIX: ${BACKUP_PREFIX:-public-site-with-cms}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-7}
+    volumes:
+      - db_backups:${BACKUP_DIR:-/backups}
+      - ./scripts/backup-postgres.sh:/usr/local/bin/backup-postgres.sh:ro
+    command: ["/bin/sh", "/usr/local/bin/backup-postgres.sh"]
+
+volumes:
+  pgdata:
+  db_backups:

@@ -1,0 +1,45 @@
+{
+  "name": "public-site-with-cms",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public site with cms",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "db:migrate": "payload migrate",
+    "db:migrate:status": "payload migrate:status",
+    "db:verify": "payload run ./src/scripts/verify-db.ts",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "echo \"No tests configured yet\" && exit 0",
+    "typecheck": "tsc --noEmit",
+    "generate:types": "payload generate:types",
+    "worker": "payload run ./src/jobs/index.ts",
+    "worker:publish-scheduled": "RUN_SCHEDULED_PUBLISH_WORKER=true payload run ./src/jobs/publish-scheduled.ts"
+  },
+  "dependencies": {
+    "@payloadcms/db-postgres": "^3",
+    "@payloadcms/next": "^3",
+    "graphql": "^16",
+    "next": "15.4.11",
+    "payload": "^3",
+    "pg": "^8.20.0",
+    "react": "^19",
+    "react-dom": "^19",
+    "sharp": "^0.33"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22",
+    "@types/pg": "^8.18.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.4.11",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,56 @@
+# progress.txt
+# Append-only execution log for this generated project
+# Format:
+# [ISO-8601 timestamp] STORY-ID — STATUS — Description
+#
+# Statuses:
+# START
+# DONE
+# BLOCKED
+# INFO
+# VALIDATION
+#
+# Example:
+# [2026-03-14T12:00:00Z] ST-001 — START — Began implementation of authentication flow
+[2026-03-16T14:25:48Z] ST-007 — START — Initialize project repository
+[2026-03-16T14:44:48Z] ST-007 — DONE — Initialize project repository
+[2026-03-16T14:44:48Z] ST-008 — START — Setup database
+[2026-03-16T15:04:02Z] ST-008 — DONE — Setup database
+[2026-03-16T15:04:02Z] ST-009 — START — Setup backend service
+[2026-03-16T15:23:44Z] ST-009 — DONE — Setup backend service
+[2026-03-16T15:23:45Z] ST-010 — START — Create frontend application
+[2026-03-16T15:27:55Z] ST-010 — DONE — Create frontend application
+[2026-03-16T15:27:55Z] ST-001 — START — Define CMS content model
+[2026-03-16T15:49:31Z] ST-001 — DONE — Define CMS content model
+[2026-03-16T15:49:31Z] ST-002 — START — Configure CDN
+[2026-03-16T15:56:44Z] ST-002 — DONE — Configure CDN
+[2026-03-16T15:56:45Z] ST-003 — START — Add locale support
+[2026-03-16T16:14:24Z] ST-003 — DONE — Add locale support
+[2026-03-16T16:14:24Z] ST-004 — START — Implement locale routing
+[2026-03-16T16:27:33Z] ST-004 — DONE — Implement locale routing
+[2026-03-16T16:27:33Z] ST-011 — START — Implement authentication
+[2026-03-16T16:46:36Z] ST-011 — DONE — Implement authentication
+[2026-03-16T16:46:36Z] ST-012 — START — Implement role-based access control
+[2026-03-16T17:05:52Z] ST-012 — DONE — Implement role-based access control
+[2026-03-16T17:05:52Z] ST-013 — START — Implement media library
+[2026-03-16T17:13:31Z] ST-013 — DONE — Implement media library
+[2026-03-16T17:13:31Z] ST-014 — START — Implement draft and publish workflow
+[2026-03-16T17:33:54Z] ST-014 — DONE — Implement draft and publish workflow
+[2026-03-16T17:33:54Z] ST-015 — START — Implement content preview
+[2026-03-16T17:43:33Z] ST-015 — DONE — Implement content preview
+[2026-03-16T17:43:33Z] ST-016 — START — Implement scheduled publishing
+[2026-03-16T18:21:24Z] ST-016 — DONE — Implement scheduled publishing
+[2026-03-16T18:21:24Z] ST-017 — START — Build content platform shell
+[2026-03-16T18:34:35Z] ST-017 — DONE — Build content platform shell
+[2026-03-16T18:34:35Z] ST-018 — START — Implement report generation
+[2026-03-16T18:46:26Z] ST-018 — DONE — Implement report generation
+[2026-03-16T18:46:26Z] ST-005 — START — Setup job worker
+[2026-03-16T18:56:09Z] ST-005 — DONE — Setup job worker
+[2026-03-16T18:56:09Z] ST-006 — START — Implement publishing scheduler
+[2026-03-16T19:04:29Z] ST-006 — DONE — Implement publishing scheduler
+[2026-03-16T19:04:29Z] ST-900 — START — Setup monitoring and logging
+[2026-03-16T19:18:06Z] ST-900 — DONE — Setup monitoring and logging
+[2026-03-16T19:18:06Z] ST-901 — START — Implement backups
+[2026-03-16T19:27:03Z] ST-901 — VALIDATION — `sh -n scripts/backup-postgres.sh`, `docker compose config`, `npm test`, `npm run lint`, and `npm run build` passed (`npm test` reports no tests configured yet)
+[2026-03-16T19:27:03Z] ST-901 — DONE — Added automated Postgres backups with configurable interval and retention in docker-compose
+[2026-03-16T19:28:04Z] ST-901 — DONE — Implement backups

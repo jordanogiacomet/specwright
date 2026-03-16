@@ -1,0 +1,38 @@
+# progress.txt
+# Append-only execution log for this generated project
+# Format:
+# [ISO-8601 timestamp] STORY-ID — STATUS — Description
+#
+# Statuses:
+# START
+# DONE
+# BLOCKED
+# INFO
+# VALIDATION
+#
+# Example:
+# [2026-03-14T12:00:00Z] ST-001 — START — Began implementation of authentication flow
+[2026-03-16T17:34:44Z] ST-007 — START — Initialize project repository
+[2026-03-16T17:56:31Z] ST-007 — DONE — Initialize project repository
+[2026-03-16T17:56:31Z] ST-008 — START — Setup database
+[2026-03-16T18:18:54Z] ST-008 — DONE — Setup database
+[2026-03-16T18:18:54Z] ST-009 — START — Setup backend service
+[2026-03-16T18:39:10Z] ST-009 — DONE — Setup backend service
+[2026-03-16T18:39:10Z] ST-010 — START — Create frontend application
+[2026-03-16T18:43:49Z] ST-010 — DONE — Create frontend application
+[2026-03-16T18:43:49Z] ST-001 — START — Define CMS content model
+[2026-03-16T19:03:15Z] ST-001 — DONE — Define CMS content model
+[2026-03-16T19:03:15Z] ST-002 — START — Configure CDN
+[2026-03-16T19:10:08Z] ST-002 — DONE — Configure CDN
+[2026-03-16T19:10:08Z] ST-003 — START — Add locale support
+[2026-03-16T19:28:43Z] ST-003 — DONE — Add locale support
+[2026-03-16T19:28:43Z] ST-004 — START — Implement locale routing
+[2026-03-16T19:45:40Z] ST-004 — DONE — Implement locale routing
+[2026-03-16T19:45:40Z] ST-011 — START — Implement authentication
+[2026-03-16T20:00:43Z] ST-011 — DONE — Implement authentication
+[2026-03-16T20:00:43Z] ST-012 — START — Implement role-based access control
+[2026-03-16T20:20:55Z] ST-012 — DONE — Implement role-based access control
+[2026-03-16T20:20:55Z] ST-013 — START — Implement media library
+[2026-03-16T20:27:41Z] ST-013 — DONE — Implement media library
+[2026-03-16T20:27:41Z] ST-014 — START — Implement draft and publish workflow
+[2026-03-16T20:27:48Z] ST-014 — BLOCKED — Codex execution failed
