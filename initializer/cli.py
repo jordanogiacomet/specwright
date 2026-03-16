@@ -13,6 +13,24 @@ def main():
         help="Enable AI-assisted discovery before final spec generation.",
     )
 
+    run_parser = subparsers.add_parser("run")
+    run_parser.add_argument("--spec", help="Path to existing spec.json to skip interactive input.")
+    run_parser.add_argument(
+        "--assist",
+        action="store_true",
+        help="Enable AI-assisted discovery.",
+    )
+    run_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run everything except actual Codex execution.",
+    )
+    run_parser.add_argument(
+        "--no-execute",
+        action="store_true",
+        help="Stop after prepare, don't run ralph loop.",
+    )
+
     plan_parser = subparsers.add_parser("plan")
     plan_parser.add_argument("--spec")
 
@@ -23,6 +41,9 @@ def main():
         action="store_true",
         help="Also run AI architecture review (requires OPENAI_API_KEY).",
     )
+
+    prepare_parser = subparsers.add_parser("prepare")
+    prepare_parser.add_argument("path", help="Path to generated project directory.")
 
     refine_parser = subparsers.add_parser("refine")
     refine_parser.add_argument("path")
@@ -40,6 +61,16 @@ def main():
 
         return run_new_project(args.spec, assist=args.assist) or 0
 
+    elif args.command == "run":
+        from initializer.flow.run_project import run_full_pipeline
+
+        return run_full_pipeline(
+            spec_path=args.spec,
+            assist=args.assist,
+            dry_run=args.dry_run,
+            skip_ralph=args.no_execute,
+        )
+
     elif args.command == "plan":
         from initializer.flow.plan_project import run_plan_project
 
@@ -49,6 +80,11 @@ def main():
         from initializer.flow.enrich_project import run_enrich_project
 
         return run_enrich_project(args.path, review=args.review)
+
+    elif args.command == "prepare":
+        from initializer.flow.prepare_project import run_prepare_project
+
+        return run_prepare_project(args.path)
 
     elif args.command == "refine":
         from initializer.flow.refine_project import run_refine_project
