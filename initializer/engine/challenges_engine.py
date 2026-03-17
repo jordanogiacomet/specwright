@@ -493,6 +493,50 @@ def _get_decision_signals(spec: dict[str, Any]) -> dict[str, Any]:
     return signals
 
 
+def _todo_app_challenges() -> list[dict[str, Any]]:
+    """Challenges for a simple todo/task list app."""
+    challenges = [
+        _challenge(
+            "todo-data-model",
+            "Todo data model",
+            "How should todos be stored and what fields matter? "
+            "A minimal model ships faster but a richer model supports filtering and sorting.",
+            [
+                {"key": "a", "label": "Minimal", "detail": "title + completed only. Ship fast, add fields later."},
+                {"key": "b", "label": "Standard", "detail": "title, description, completed, dueDate, priority, createdAt."},
+                {"key": "c", "label": "Rich", "detail": "Standard + tags, categories, recurring, reminders."},
+            ],
+            default="b",
+            affects=["architecture", "stories"],
+        ),
+        _challenge(
+            "todo-filtering",
+            "Filtering and sorting",
+            "Users will want to find specific todos. How much filtering to build in v1?",
+            [
+                {"key": "a", "label": "None", "detail": "Just a flat list, newest first. Simplest."},
+                {"key": "b", "label": "Basic", "detail": "Filter by completed/pending + sort by date or priority."},
+                {"key": "c", "label": "Advanced", "detail": "Full-text search + filter by tags/priority/date range."},
+            ],
+            default="b",
+            affects=["stories"],
+        ),
+        _challenge(
+            "todo-auth-scope",
+            "Auth complexity",
+            "How much auth infrastructure to build? More auth = more stories but more polish.",
+            [
+                {"key": "a", "label": "Email + password only", "detail": "Register, login, logout. No password reset, no OAuth."},
+                {"key": "b", "label": "Email + password + reset", "detail": "Add forgot-password flow with email token."},
+                {"key": "c", "label": "OAuth", "detail": "Google/GitHub login via NextAuth or similar. More config."},
+            ],
+            default="a",
+            affects=["architecture", "stories"],
+        ),
+    ]
+    return challenges
+
+
 def _normalize_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -535,6 +579,9 @@ def generate_challenges(spec: dict[str, Any]) -> list[dict[str, Any]]:
 
     elif archetype == "saas-app":
         challenges.extend(_saas_challenges(capabilities, features))
+
+    elif archetype == "todo-app":
+        challenges.extend(_todo_app_challenges())
 
     # Common challenges (cross-archetype)
     challenges.extend(_common_challenges(capabilities, features))

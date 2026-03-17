@@ -12,6 +12,7 @@ Archetypes:
 - client-portal: client-facing request/tracking system
 - work-organizer: internal work/task management
 - knowledge-base: documentation/wiki system
+- todo-app: simple task/todo list application (fast validation archetype)
 - generic-web-app: fallback for unrecognized prompts
 """
 
@@ -148,6 +149,20 @@ ARCHETYPE_DEFINITIONS = {
         ],
         "capabilities": [],
     },
+    "todo-app": {
+        "id": "todo-app",
+        "name": "todo-app",
+        "stack": {
+            "frontend": "nextjs",
+            "backend": "node-api",
+            "database": "postgres",
+        },
+        "features": [
+            "authentication",
+            "api",
+        ],
+        "capabilities": [],
+    },
 }
 
 
@@ -253,6 +268,20 @@ ARCHETYPE_KEYWORDS = {
         ("help center", 2),
         ("faq system", 2),
         ("support articles", 2),
+    ],
+    "todo-app": [
+        ("todo app", 5),
+        ("todo-app", 5),
+        ("todo list", 4),
+        ("task list", 3),
+        ("simple task", 3),
+        ("simple todo", 4),
+        ("minimal todo", 4),
+        ("basic todo", 4),
+        ("checklist app", 3),
+        ("to-do app", 4),
+        ("to do app", 4),
+        ("lista de tarefas", 3),
     ],
 }
 

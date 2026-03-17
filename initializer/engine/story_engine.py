@@ -1036,4 +1036,122 @@ def generate_stories(spec):
                 ),
             )
 
+    # ===================================================================
+    # TODO-APP SPECIFIC STORIES
+    # ===================================================================
+
+    archetype = spec.get("archetype", "")
+
+    if archetype == "todo-app" or app_shape == "todo-list":
+        upsert_story(
+            "product.todo-model",
+            "Implement Todo data model",
+            "Create the Todo entity with all fields and database schema.",
+            acceptance_criteria=[
+                "Todo model exists with fields: title (required), description (optional), completed (boolean, default false), dueDate (optional), priority (enum: low/medium/high, default medium), createdAt, updatedAt",
+                "Database migration creates the todos table with proper types and indexes",
+                "Todo belongs to a User via userId foreign key",
+                "Database migration is generated and executed for schema changes",
+            ],
+            scope_boundaries=[
+                "Do NOT implement API endpoints yet — only the data model and migration",
+                "Do NOT implement tags, categories, or recurring todos",
+                "Do NOT implement soft-delete",
+            ],
+            expected_files=[
+                "src/models/todo.ts",
+                _lib_path("db"),
+            ],
+            depends_on=["bootstrap.database", "feature.authentication"],
+            validation=_validation(
+                commands=["npm run build"],
+                manual_check="Migration runs and todos table exists in database",
+            ),
+        )
+
+        upsert_story(
+            "product.todo-api",
+            "Implement Todo CRUD API",
+            "Create REST API endpoints for creating, reading, updating, and deleting todos.",
+            acceptance_criteria=[
+                "POST /api/todos creates a new todo for the authenticated user",
+                "GET /api/todos returns all todos for the authenticated user",
+                "PATCH /api/todos/:id updates a todo (title, description, completed, dueDate, priority)",
+                "DELETE /api/todos/:id permanently deletes a todo",
+                "All endpoints require authentication and enforce owner-only access",
+                "Invalid requests return appropriate error responses (400, 401, 404)",
+            ],
+            scope_boundaries=[
+                "Do NOT implement filtering or sorting yet — that is a separate story",
+                "Do NOT implement bulk operations",
+                "Do NOT implement pagination yet",
+            ],
+            expected_files=[
+                "src/api/todos.ts or src/app/api/todos/route.ts",
+                "src/api/todos/[id].ts or src/app/api/todos/[id]/route.ts",
+            ],
+            depends_on=["product.todo-model"],
+            validation=_validation(
+                commands=["npm run build", "npm test"],
+                manual_check="Can create, read, update, delete a todo via API while authenticated",
+            ),
+        )
+
+        upsert_story(
+            "product.todo-ui",
+            "Implement Todo list UI",
+            "Create the frontend todo list with add, toggle, and delete functionality.",
+            acceptance_criteria=[
+                "Todo list page shows all todos for the logged-in user",
+                "User can add a new todo with title (required) and optional fields",
+                "User can toggle a todo between pending and completed",
+                "User can delete a todo with confirmation",
+                "Completed todos are visually distinct (strikethrough or dimmed)",
+                "Empty state is shown when no todos exist",
+                "Loading state is shown while fetching",
+            ],
+            scope_boundaries=[
+                "Do NOT implement drag-and-drop reordering",
+                "Do NOT implement inline editing — use a form or modal",
+                "Do NOT implement filtering UI yet",
+            ],
+            expected_files=[
+                _frontend_page_path(stack, "(app)/todos"),
+                _component_path("TodoList"),
+                _component_path("TodoItem"),
+                _component_path("AddTodoForm"),
+            ],
+            depends_on=["product.todo-api", "bootstrap.frontend"],
+            validation=_validation(
+                commands=["npm run build"],
+                manual_check="Can see todo list, add a todo, toggle it, and delete it in the browser",
+            ),
+        )
+
+        upsert_story(
+            "product.todo-filtering",
+            "Implement Todo filtering and sorting",
+            "Add ability to filter todos by status and sort by date or priority.",
+            acceptance_criteria=[
+                "User can filter todos: All, Pending, Completed",
+                "User can sort todos by: newest first, oldest first, priority (high to low)",
+                "Filter and sort state persists during the session (not across page reloads)",
+                "API supports query params: ?completed=true|false&sort=createdAt|priority&order=asc|desc",
+                "URL reflects current filter state for shareability",
+            ],
+            scope_boundaries=[
+                "Do NOT implement full-text search",
+                "Do NOT implement tag-based filtering",
+                "Do NOT implement saved filter presets",
+            ],
+            expected_files=[
+                _component_path("TodoFilters"),
+            ],
+            depends_on=["product.todo-ui"],
+            validation=_validation(
+                commands=["npm run build"],
+                manual_check="Can filter by pending/completed and sort by date or priority",
+            ),
+        )
+
     return stories

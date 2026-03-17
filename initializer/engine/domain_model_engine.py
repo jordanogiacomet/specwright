@@ -592,6 +592,51 @@ def _generic_rules() -> list[str]:
 
 
 # -------------------------------------------------------------------
+# Todo-app
+# -------------------------------------------------------------------
+
+def _todo_app_entities() -> list[dict[str, Any]]:
+    return [
+        _entity(
+            "Todo",
+            "A task or action item owned by a user",
+            fields=["title", "description", "completed", "dueDate", "priority", "createdAt", "updatedAt"],
+            states=["pending", "completed"],
+            transitions=[
+                {"from": "pending", "to": "completed", "actor": "owner"},
+                {"from": "completed", "to": "pending", "actor": "owner"},
+            ],
+            relationships=["belongs_to User"],
+        ),
+        _entity(
+            "User",
+            "An application user who owns todos",
+            fields=["email", "name", "passwordHash", "createdAt"],
+            relationships=["has_many Todo"],
+        ),
+    ]
+
+
+def _todo_app_roles() -> list[dict[str, str | list[str]]]:
+    return [
+        {"name": "user", "can": [
+            "create_todo", "read_own_todos", "update_own_todo",
+            "delete_own_todo", "toggle_todo_complete",
+        ]},
+    ]
+
+
+def _todo_app_rules() -> list[str]:
+    return [
+        "Users can only see and modify their own todos.",
+        "Toggling a todo marks it as completed or pending.",
+        "Deleting a todo is permanent (no soft-delete).",
+        "Todos are ordered by createdAt descending by default.",
+        "No roles or admin panel — single user type.",
+    ]
+
+
+# -------------------------------------------------------------------
 # Public API
 # -------------------------------------------------------------------
 
@@ -614,7 +659,12 @@ def generate_domain_model(spec: dict[str, Any]) -> dict[str, Any]:
     has_public = "public-site" in capabilities
 
     # --- Entities ---
-    if archetype == "editorial-cms" or app_shape == "content-platform":
+    if archetype == "todo-app":
+        entities = _todo_app_entities()
+        roles = _todo_app_roles()
+        business_rules = _todo_app_rules()
+
+    elif archetype == "editorial-cms" or app_shape == "content-platform":
         entities = _editorial_entities(features, has_public)
         roles = _editorial_roles()
         business_rules = _editorial_rules(features)

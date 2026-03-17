@@ -329,6 +329,26 @@ run_migrations() {{
         return 0
     fi
 
+    # Only run if the migration command is available
+    # For payload: check if payload is installed
+    # For npm scripts: check if the script exists in package.json
+    if [[ "$MIGRATION_CMD" == "npx payload migrate" ]]; then
+        # Check if payload is installed
+        if [[ ! -f "$SCRIPT_DIR/node_modules/.package-lock.json" ]] && ! npx payload --help &>/dev/null; then
+            return 0
+        fi
+        # Check if payload config exists (means backend is set up)
+        if [[ ! -f "$SCRIPT_DIR/src/payload.config.ts" ]] && [[ ! -f "$SCRIPT_DIR/payload.config.ts" ]]; then
+            return 0
+        fi
+    elif [[ "$MIGRATION_CMD" == npm\ run\ * ]]; then
+        # Extract script name from "npm run db:migrate"
+        local script_name="${{MIGRATION_CMD#npm run }}"
+        if ! node -e "const p=require('./package.json'); if(!p.scripts?.['$script_name']) process.exit(1)" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
     echo "Running database migrations..."
 
     # Check if database is reachable before running migrations
@@ -413,12 +433,12 @@ If no commands exist yet, note that in your response.
 PROMPT_EOF
 
     # Run Codex via npx
-    npx -y @openai/codex@latest exec \\\\
-        --model gpt-5.4 \\\\
-        --config 'model_reasoning_effort="xhigh"' \\\\
-        --sandbox danger-full-access \\\\
-        --json \\\\
-        --output-last-message "$output_file" \\\\
+    npx -y @openai/codex@latest exec \\
+        --model gpt-5.4 \\
+        --config 'model_reasoning_effort="xhigh"' \\
+        --sandbox danger-full-access \\
+        --json \\
+        --output-last-message "$output_file" \\
         - < "$prompt_file"
 
     local exit_code=$?
@@ -498,12 +518,12 @@ After fixing, run: test, lint, build.
 PROMPT_EOF
 
     # Run Codex via npx
-    npx -y @openai/codex@latest exec \\\\
-        --model gpt-5.4 \\\\
-        --config 'model_reasoning_effort="xhigh"' \\\\
-        --sandbox danger-full-access \\\\
-        --json \\\\
-        --output-last-message "$output_file" \\\\
+    npx -y @openai/codex@latest exec \\
+        --model gpt-5.4 \\
+        --config 'model_reasoning_effort="xhigh"' \\
+        --sandbox danger-full-access \\
+        --json \\
+        --output-last-message "$output_file" \\
         - < "$prompt_file"
 
     local exit_code=$?
