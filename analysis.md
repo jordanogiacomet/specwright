@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-18
 **Test suite**: 219/219 passed (3.81s) — 62 new tests added (14 initial + 48 from action plan execution)
-**Generated projects inspected**: `output/todo-app`, `output/todo-app-design`
+**Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload)
 
 ### Resolution Status
 
@@ -24,6 +24,38 @@
 | IMP-007 | FIXED | `_surface_conflicts()` prints signal conflicts to user after each discovery merge |
 | IMP-009 | FIXED | Scaffold now generates `.env.local` alongside `.env.example` for all stacks (5 tests added) |
 | IMP-011 | N/A | `output/` already in `.gitignore` — no action needed |
+| E2E     | VALIDATED | Full E2E run on 2 fresh projects (taskflow + newshub-cms); all fixes confirmed |
+| BUG-004 | FIXED | Backticks in `run_codex_retry` heredoc caused bash to execute `$previous_error` as command; escaped to `\`\`\`` |
+| ASSIST  | VALIDATED | `--assist` flow tested interactively (dentaldesk project); signals, conflicts, decisions, design style all captured correctly |
+
+---
+
+## E2E Validation (2026-03-18)
+
+Two projects generated from scratch via `initializer new --spec`:
+
+### taskflow (node-api + postgres)
+| Check | Status |
+|-------|--------|
+| `.env.local` gerado e idêntico ao `.env.example` | PASS |
+| Express/cors/helmet em `package.json` | PASS |
+| `ralph.sh` usa `${CODEX_MODEL:-gpt-5.4}` | PASS |
+| `ralph.sh` tem `exit 1` em falha | PASS |
+| ST-900/ST-901 com `story_key` correto | PASS |
+| StoryGraph — order topológica sem ciclos (8 stories) | PASS |
+| BUG-002 — progress parser retorna IDs corretos | PASS |
+| StoryScheduler — identifica próxima story corretamente | PASS |
+
+### newshub-cms (Payload + postgres)
+| Check | Status |
+|-------|--------|
+| `.env.local` com `PAYLOAD_SECRET` | PASS |
+| `payload` / `@payloadcms/next` em deps; sem express | PASS |
+| `src/payload.config.ts`, `src/collections/Users.ts`, `.npmrc` presentes | PASS |
+| Migration commands separados (`payload migrate:create/status`) | PASS |
+| `${CODEX_MODEL:-gpt-5.4}` e `exit 1` em `ralph.sh` | PASS |
+| ST-900/ST-901 com `story_key` | PASS |
+| StoryGraph carrega e ordena 14 stories sem ciclos | PASS |
 
 ---
 

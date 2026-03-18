@@ -517,9 +517,9 @@ You are RETRYING a story that failed on the previous attempt for the project **{
 
 The previous attempt failed with:
 
-```
+\`\`\`
 $previous_error
-```
+\`\`\`
 
 ## What to do
 
