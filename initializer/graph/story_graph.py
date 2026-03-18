@@ -28,6 +28,19 @@ class StoryGraph:
 
         stories = {story["id"]: story for story in data["stories"]}
 
+        # Build story_key → id lookup so depends_on (which uses story_key
+        # values like "bootstrap.repository") can be resolved to ids.
+        key_to_id = {}
+        for story in stories.values():
+            sk = story.get("story_key")
+            if sk:
+                key_to_id[sk] = story["id"]
+
+        # Translate depends_on from story_key to id
+        for story in stories.values():
+            deps = story.get("depends_on", [])
+            story["depends_on"] = [key_to_id.get(d, d) for d in deps]
+
         graph = cls(stories)
 
         graph.detect_cycles()
@@ -119,8 +132,7 @@ class StoryGraph:
                 raise RuntimeError("No executable stories found. Graph may be invalid.")
 
             for story in available:
-                if story not in completed:
-                    completed.add(story)
-                    order.append(story)
+                completed.add(story)
+                order.append(story)
 
         return order

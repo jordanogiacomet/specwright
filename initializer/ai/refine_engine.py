@@ -98,6 +98,7 @@ def _build_monitoring_story(spec):
     return {
         "id": "ST-900",
         "title": "Setup monitoring and logging",
+        "story_key": "operations.monitoring",
         "description": "Integrate structured logging, health checks, and error tracking across the application.",
         "acceptance_criteria": acceptance_criteria,
         "scope_boundaries": scope_boundaries,
@@ -158,6 +159,7 @@ def _build_backups_story(spec):
     return {
         "id": "ST-901",
         "title": "Implement backups",
+        "story_key": "operations.backups",
         "description": f"Automate {database} database backups with retention policies and documented restore procedure.",
         "acceptance_criteria": acceptance_criteria,
         "scope_boundaries": scope_boundaries,

@@ -28,16 +28,36 @@ def _get_decision_signals(spec: dict[str, Any]) -> dict[str, Any]:
     return signals
 
 
-def _detect_migration_command(spec: dict[str, Any]) -> str:
-    """Detect the migration command based on the backend stack."""
+def _detect_migration_commands(spec: dict[str, Any]) -> dict[str, str]:
+    """Detect migration commands based on the backend stack.
+
+    Returns a dict with keys: run, create, status.
+    """
     backend = (spec.get("stack", {}).get("backend") or "").lower().strip()
 
     if backend in ("payload", "payload-cms"):
-        return "npx payload migrate"
+        return {
+            "run": "npx payload migrate",
+            "create": "npx payload migrate:create",
+            "status": "npx payload migrate:status",
+        }
     elif backend == "django":
-        return "python manage.py migrate"
+        return {
+            "run": "python manage.py migrate",
+            "create": "python manage.py makemigrations",
+            "status": "python manage.py showmigrations",
+        }
     else:
-        return "npm run db:migrate"
+        return {
+            "run": "npm run db:migrate",
+            "create": "npm run db:migrate:create",
+            "status": "npm run db:migrate:status",
+        }
+
+
+def _detect_migration_command(spec: dict[str, Any]) -> str:
+    """Backwards-compatible: return the run command."""
+    return _detect_migration_commands(spec)["run"]
 
 
 def _build_agents_md(spec: dict[str, Any]) -> str:
@@ -235,7 +255,10 @@ def _build_ralph_sh(spec: dict[str, Any]) -> str:
     """Build ralph.sh — the story-by-story execution script for Codex CLI."""
     answers = spec.get("answers", {})
     project_name = answers.get("project_name", "Generated Project")
-    migration_cmd = _detect_migration_command(spec)
+    migration_cmds = _detect_migration_commands(spec)
+    migration_cmd = migration_cmds["run"]
+    migration_create = migration_cmds["create"]
+    migration_status = migration_cmds["status"]
 
     return f'''#!/usr/bin/env bash
 set -euo pipefail
@@ -252,6 +275,9 @@ PLAN_FILE="$SCRIPT_DIR/.openclaw/execution-plan.json"
 PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
 STORIES_DIR="$SCRIPT_DIR/docs/stories"
 MIGRATION_CMD="{migration_cmd}"
+MIGRATION_CREATE="{migration_create}"
+MIGRATION_STATUS="{migration_status}"
+CODEX_MODEL="${{CODEX_MODEL:-gpt-5.4}}"
 
 DRY_RUN=false
 START_FROM=""
@@ -341,7 +367,7 @@ run_migrations() {{
         if [[ ! -f "$SCRIPT_DIR/src/payload.config.ts" ]] && [[ ! -f "$SCRIPT_DIR/payload.config.ts" ]]; then
             return 0
         fi
-    elif [[ "$MIGRATION_CMD" == npm\ run\ * ]]; then
+    elif [[ "$MIGRATION_CMD" == "npm run "* ]]; then
         # Extract script name from "npm run db:migrate"
         local script_name="${{MIGRATION_CMD#npm run }}"
         if ! node -e "const p=require('./package.json'); if(!p.scripts?.['$script_name']) process.exit(1)" 2>/dev/null; then
@@ -420,9 +446,9 @@ If this story adds, removes, or modifies any collection fields, database models,
 or schema (including adding localization to fields), you MUST:
 
 1. Make the schema change
-2. Generate a migration: `$MIGRATION_CMD:create`
+2. Generate a migration: `$MIGRATION_CREATE`
 3. Run the migration: `$MIGRATION_CMD`
-4. Verify with: `$MIGRATION_CMD:status`
+4. Verify with: `$MIGRATION_STATUS`
 
 Skipping this will cause runtime errors like "relation does not exist".
 
@@ -434,7 +460,7 @@ PROMPT_EOF
 
     # Run Codex via npx
     npx -y @openai/codex@latest exec \\
-        --model gpt-5.4 \\
+        --model "$CODEX_MODEL" \\
         --config 'model_reasoning_effort="xhigh"' \\
         --sandbox danger-full-access \\
         --json \\
@@ -491,9 +517,9 @@ You are RETRYING a story that failed on the previous attempt for the project **{
 
 The previous attempt failed with:
 
-\`\`\`
+```
 $previous_error
-\`\`\`
+```
 
 ## What to do
 
@@ -509,7 +535,7 @@ $(if [[ -f "$STORIES_DIR/$story_id.md" ]]; then cat "$STORIES_DIR/$story_id.md";
 ## CRITICAL: Database Migrations
 
 If the error is about missing tables or columns ("relation does not exist"):
-1. Generate a migration: `$MIGRATION_CMD:create`
+1. Generate a migration: `$MIGRATION_CREATE`
 2. Run the migration: `$MIGRATION_CMD`
 
 ## Validation
@@ -519,7 +545,7 @@ PROMPT_EOF
 
     # Run Codex via npx
     npx -y @openai/codex@latest exec \\
-        --model gpt-5.4 \\
+        --model "$CODEX_MODEL" \\
         --config 'model_reasoning_effort="xhigh"' \\
         --sandbox danger-full-access \\
         --json \\
@@ -737,6 +763,10 @@ echo "Implemented: $IMPLEMENTED"
 echo "Failed: $FAILED"
 echo "Total: $TOTAL"
 echo ""
+
+if [[ $FAILED -gt 0 ]]; then
+    exit 1
+fi
 '''
 
 

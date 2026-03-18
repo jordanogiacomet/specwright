@@ -113,11 +113,15 @@ def _get_confirmed_signals(spec):
 
 
 def _has_discovery(spec):
-    """Check if discovery has been run at all."""
+    """Check if discovery has been run (assisted or manual signals present)."""
     discovery = spec.get("discovery", {})
     if not isinstance(discovery, dict):
         return False
-    return discovery.get("assisted", False)
+    # Discovery counts if AI-assisted OR if decision_signals were provided manually
+    if discovery.get("assisted", False):
+        return True
+    signals = discovery.get("decision_signals", {})
+    return isinstance(signals, dict) and len(signals) > 0
 
 
 def derive_capabilities(

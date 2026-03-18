@@ -322,3 +322,73 @@ def test_openclaw_commands_json_go_stack(tmp_path):
     assert "go test" in commands["commands"]["test"]
     assert "golangci-lint" in commands["commands"]["lint"]
     assert "go build" in commands["commands"]["build"]
+
+
+# -------------------------------------------------------
+# Codex bundle — migration commands (BUG-003 fix)
+# -------------------------------------------------------
+
+
+def test_codex_migration_commands_payload(tmp_path):
+    from initializer.renderers.codex_bundle import _detect_migration_commands
+
+    spec = _make_spec(stack={"frontend": "nextjs", "backend": "payload", "database": "postgres"})
+    cmds = _detect_migration_commands(spec)
+
+    assert cmds["run"] == "npx payload migrate"
+    assert cmds["create"] == "npx payload migrate:create"
+    assert cmds["status"] == "npx payload migrate:status"
+
+
+def test_codex_migration_commands_django(tmp_path):
+    from initializer.renderers.codex_bundle import _detect_migration_commands
+
+    spec = _make_spec(stack={"frontend": "", "backend": "django", "database": "postgres"})
+    cmds = _detect_migration_commands(spec)
+
+    assert cmds["run"] == "python manage.py migrate"
+    assert cmds["create"] == "python manage.py makemigrations"
+    assert cmds["status"] == "python manage.py showmigrations"
+
+
+def test_codex_migration_commands_node_api(tmp_path):
+    from initializer.renderers.codex_bundle import _detect_migration_commands
+
+    spec = _make_spec()
+    cmds = _detect_migration_commands(spec)
+
+    assert cmds["run"] == "npm run db:migrate"
+    assert cmds["create"] == "npm run db:migrate:create"
+    assert cmds["status"] == "npm run db:migrate:status"
+
+
+# -------------------------------------------------------
+# Codex bundle — ralph.sh features
+# -------------------------------------------------------
+
+
+def test_codex_ralph_sh_has_configurable_model(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert "CODEX_MODEL" in content
+    assert "${CODEX_MODEL:-gpt-5.4}" in content
+
+
+def test_codex_ralph_sh_exits_nonzero_on_failure(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert "exit 1" in content
+    assert "FAILED" in content
+
+
+def test_codex_ralph_sh_uses_separate_migration_commands(tmp_path):
+    spec = _make_spec(stack={"frontend": "nextjs", "backend": "payload", "database": "postgres"})
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert "npx payload migrate:create" in content
+    assert "npx payload migrate:status" in content

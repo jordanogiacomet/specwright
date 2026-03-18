@@ -21,6 +21,16 @@ from pathlib import Path
 from typing import Any
 
 
+def _derive_port(slug: str, base: int = 5433) -> int:
+    """Derive a unique port from the project slug.
+
+    Maps slug to a port in the range 5433-5499 so that
+    multiple projects can run docker simultaneously.
+    """
+    h = sum(ord(c) for c in slug) % 67  # 0-66
+    return base + h
+
+
 # -------------------------------------------------------------------
 # Helpers
 # -------------------------------------------------------------------
@@ -60,6 +70,7 @@ def _docker_compose(spec: dict[str, Any]) -> str:
     slug = _slug(spec)
     db = _database(spec)
     capabilities = spec.get("capabilities", [])
+    port = _derive_port(slug)
 
     services = []
 
@@ -73,7 +84,7 @@ def _docker_compose(spec: dict[str, Any]) -> str:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "${{POSTGRES_PORT:-5433}}:5432"
+      - "${{POSTGRES_PORT:-{port}}}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -130,8 +141,9 @@ def _env_example(spec: dict[str, Any]) -> str:
 
     if db == "postgres":
         db_name = slug.replace("-", "_")
-        lines.append(f"DATABASE_URI=postgresql://postgres:postgres@localhost:5433/{db_name}")
-        lines.append("POSTGRES_PORT=5433  # Change if 5433 is also in use")
+        port = _derive_port(slug)
+        lines.append(f"DATABASE_URI=postgresql://postgres:postgres@localhost:{port}/{db_name}")
+        lines.append(f"POSTGRES_PORT={port}  # Unique per project — change if {port} is in use")
     elif db == "mongodb":
         lines.append(f"DATABASE_URI=mongodb://localhost:27017/{slug}")
     elif db == "sqlite":
@@ -261,8 +273,12 @@ def _package_json(spec: dict[str, Any]) -> str:
         pkg["dependencies"]["graphql"] = "^16"
         pkg["dependencies"]["sharp"] = "^0.33"
     else:
-        # Generic node-api: Express for API routes if not using Next.js API routes
-        pass
+        # Generic node-api: Express for standalone API routes
+        pkg["dependencies"]["express"] = "^4"
+        pkg["dependencies"]["cors"] = "^2"
+        pkg["dependencies"]["helmet"] = "^7"
+        pkg["devDependencies"]["@types/express"] = "^4"
+        pkg["devDependencies"]["@types/cors"] = "^2"
 
     return json.dumps(pkg, indent=2) + "\n"
 
@@ -633,7 +649,9 @@ def write_scaffold(output_dir: Path, spec: dict[str, Any]) -> None:
 
     # --- Root config files ---
     _write(output_dir, "docker-compose.yml", _docker_compose(spec))
-    _write(output_dir, ".env.example", _env_example(spec))
+    env_content = _env_example(spec)
+    _write(output_dir, ".env.example", env_content)
+    _write(output_dir, ".env.local", env_content)
     _write(output_dir, ".gitignore", _gitignore())
     _write(output_dir, "tsconfig.json", _tsconfig(spec))
     _write(output_dir, "package.json", _package_json(spec))

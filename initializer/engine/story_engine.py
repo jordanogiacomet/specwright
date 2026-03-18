@@ -228,6 +228,7 @@ def generate_stories(spec):
         acceptance_criteria=[
             "package.json exists with scripts: dev, build, lint, test",
             ".env.example exists with all required environment variables",
+            ".env.local is created by copying .env.example with working default values for local development",
             "TypeScript is configured with tsconfig.json",
             "ESLint and Prettier are configured",
             "npm install completes without errors",
@@ -243,6 +244,7 @@ def generate_stories(spec):
             "tsconfig.json",
             ".eslintrc.js or eslint.config.js",
             ".env.example",
+            ".env.local",
             ".gitignore",
             "README.md",
         ],

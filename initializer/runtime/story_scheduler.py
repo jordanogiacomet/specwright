@@ -28,8 +28,10 @@ def load_completed_from_progress(progress_path: Path) -> set[str]:
 
             parts = line.split("—")
 
-            if len(parts) > 1:
-                story = parts[1].strip().split()[0]
+            if len(parts) > 1 and "DONE" in parts[1]:
+                # Story ID is the last token before the first —
+                # Format: [timestamp] ST-001 — DONE — description
+                story = parts[0].strip().split()[-1]
                 completed.add(story)
 
     return completed

@@ -761,6 +761,18 @@ def apply_followup_answers_to_spec(
     return spec
 
 
+def _surface_conflicts(spec: dict[str, Any]) -> None:
+    """Print any signal conflicts detected during discovery merge."""
+    conflicts = spec.get("discovery", {}).get("conflicts", [])
+    if not conflicts:
+        return
+    print("\n--- Signal Conflicts Detected ---")
+    for conflict in conflicts:
+        print(f"  - {conflict}")
+    print("Discovery signals took precedence over surface answers.")
+    print("---------------------------------\n")
+
+
 def run_optional_assisted_discovery(
     spec: dict[str, Any],
     assist: bool = False,
@@ -770,6 +782,7 @@ def run_optional_assisted_discovery(
 
     first_result = run_assisted_discovery(spec)
     merged_spec = merge_assisted_discovery(spec, first_result)
+    _surface_conflicts(merged_spec)
 
     question_objects = [
         question.to_dict() for question in first_result.additional_questions
@@ -787,6 +800,7 @@ def run_optional_assisted_discovery(
 
     second_result = run_assisted_discovery(merged_spec)
     merged_spec = merge_assisted_discovery(merged_spec, second_result)
+    _surface_conflicts(merged_spec)
 
     return merged_spec
 
