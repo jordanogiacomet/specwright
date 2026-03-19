@@ -1,0 +1,10 @@
+Implemented ST-007 as repository scaffolding only. [`package.json`](/workspace/output/todo-app/package.json#L6) now has the required `dev`/`build`/`lint`/`test` scripts and the missing lint/format dependencies; [`tsconfig.json`](/workspace/output/todo-app/tsconfig.json#L2), [`eslint.config.mjs`](/workspace/output/todo-app/eslint.config.mjs#L1), and [`.prettierrc.json`](/workspace/output/todo-app/.prettierrc.json) complete the TypeScript, ESLint, and Prettier setup. [` .env.example`](/workspace/output/todo-app/.env.example#L1) and [`.env.local`](/workspace/output/todo-app/.env.local) now define matching local defaults for frontend, planned API, postgres, and JWT config, and [`README.md`](/workspace/output/todo-app/README.md#L3) documents the bootstrap workflow.
+
+I also added non-behavioral placeholder structure under `src/api`, `src/components/ui`, `src/hooks`, `src/jobs`, `src/middleware`, `src/models`, and `src/styles` so later stories can fill in backend, database, and app code without reshaping the repo. No migrations were needed because this story does not touch schema.
+
+Validation:
+- `npm install` passed
+- `npm run lint` passed
+- `npm run build` passed
+- `npm test` passed, but it is still the bootstrap placeholder script
+- `npm install` reported 1 moderate `npm audit` vulnerability, non-blocking for this storytail: '/workspace/output/todo-app/.codex-last-message.O5SQnO.txt' has become inaccessible: No such file or directory

@@ -1,0 +1,10 @@
+graph TD
+cdn["cdn"]
+worker["worker"]
+frontend["frontend"]
+api["api"]
+database["database"]
+frontend --> api
+api --> database
+worker --> database
+cdn --> frontend
