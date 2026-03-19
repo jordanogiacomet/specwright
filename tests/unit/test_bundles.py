@@ -138,7 +138,7 @@ def test_codex_bundle_ralph_sh_has_auth_check(tmp_path):
     write_codex_bundle(tmp_path, spec)
 
     content = (tmp_path / "ralph.sh").read_text()
-    assert "OPENAI_API_KEY" in content
+    assert "codex auth login" in content
     assert "Auth: OK" in content
 
 
@@ -392,3 +392,45 @@ def test_codex_ralph_sh_uses_separate_migration_commands(tmp_path):
     content = (tmp_path / "ralph.sh").read_text()
     assert "npx payload migrate:create" in content
     assert "npx payload migrate:status" in content
+
+
+# -------------------------------------------------------
+# QUALITY-001: AGENTS.md quality improvements
+# -------------------------------------------------------
+
+
+def test_codex_agents_md_has_migration_directory(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / ".codex" / "AGENTS.md").read_text()
+    assert "src/lib/migrations/" in content
+
+
+def test_codex_agents_md_uses_separate_migration_commands(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / ".codex" / "AGENTS.md").read_text()
+    assert "npm run db:migrate:create" in content
+    assert "npm run db:migrate:status" in content
+    # Should NOT use old concatenation pattern
+    assert "`npm run db:migrate`:create" not in content
+
+
+def test_codex_agents_md_forbids_src_pages(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / ".codex" / "AGENTS.md").read_text()
+    assert "src/pages/" in content
+    assert "App Router" in content
+
+
+def test_codex_agents_md_enforces_env_var_names(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / ".codex" / "AGENTS.md").read_text()
+    assert ".env.example" in content
+    assert "do NOT rename" in content.lower() or "do not rename" in content.lower()

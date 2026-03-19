@@ -291,3 +291,123 @@ def test_merge_preserves_enrichment_fields():
     # Existing enrichment fields should be preserved
     assert auth["acceptance_criteria"] == ["Custom criterion"]
     assert auth["depends_on"] == ["custom.dep"]
+
+
+# -------------------------------------------------------
+# STORY-001: Migration directory scope boundary
+# -------------------------------------------------------
+
+
+def test_database_story_has_migration_dir_boundary():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "node-api", "database": "postgres"},
+        "features": [],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    db_story = next(s for s in stories if s.get("story_key") == "bootstrap.database")
+    assert any("src/lib/migrations" in b for b in db_story["scope_boundaries"])
+
+
+def test_auth_story_has_migration_dir_boundary():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "node-api", "database": "postgres"},
+        "features": ["authentication"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    auth = next(s for s in stories if s.get("story_key") == "feature.authentication")
+    assert any("src/lib/migrations" in b for b in auth["scope_boundaries"])
+
+
+def test_todo_model_has_migration_dir_boundary():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "node-api", "database": "postgres"},
+        "features": ["authentication"],
+        "stories": [],
+        "archetype": "todo-app",
+    }
+    stories = generate_stories(spec)
+    todo = next(s for s in stories if s.get("story_key") == "product.todo-model")
+    assert any("src/lib/migrations" in b for b in todo["scope_boundaries"])
+
+
+# -------------------------------------------------------
+# STORY-002: i18n story generation
+# -------------------------------------------------------
+
+
+def test_i18n_capability_generates_story():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "node-api", "database": "postgres"},
+        "features": [],
+        "capabilities": ["i18n"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    i18n = next((s for s in stories if s.get("story_key") == "feature.i18n-setup"), None)
+    assert i18n is not None
+    assert "middleware" in i18n["description"].lower() or "middleware" in " ".join(i18n.get("acceptance_criteria", [])).lower()
+
+
+def test_i18n_story_warns_about_orphan_routes():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "node-api", "database": "postgres"},
+        "features": [],
+        "capabilities": ["i18n"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    i18n = next(s for s in stories if s.get("story_key") == "feature.i18n-setup")
+    boundaries = " ".join(i18n["scope_boundaries"])
+    assert "orphan" in boundaries.lower() or "outside" in boundaries.lower()
+
+
+def test_i18n_story_requires_moving_all_pages():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "node-api", "database": "postgres"},
+        "features": [],
+        "capabilities": ["i18n"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    i18n = next(s for s in stories if s.get("story_key") == "feature.i18n-setup")
+    criteria = " ".join(i18n["acceptance_criteria"])
+    assert "MOVED" in criteria or "move" in criteria.lower()
+
+
+# -------------------------------------------------------
+# STORY-003: API response contracts in auth
+# -------------------------------------------------------
+
+
+def test_auth_story_has_status_codes():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "node-api", "database": "postgres"},
+        "features": ["authentication"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    auth = next(s for s in stories if s.get("story_key") == "feature.authentication")
+    criteria = " ".join(auth["acceptance_criteria"])
+    assert "201" in criteria
+    assert "401" in criteria
+    assert "200" in criteria
+
+
+# -------------------------------------------------------
+# STORY-004: Test framework in bootstrap
+# -------------------------------------------------------
+
+
+def test_bootstrap_repo_requires_test_framework():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "node-api", "database": "postgres"},
+        "features": [],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    repo = next(s for s in stories if s.get("story_key") == "bootstrap.repository")
+    criteria = " ".join(repo["acceptance_criteria"])
+    assert "vitest" in criteria.lower() or "jest" in criteria.lower()
+    assert "npm test" in " ".join(repo["validation"]["commands"])

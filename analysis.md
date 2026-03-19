@@ -1,7 +1,7 @@
 # Specwright — Full Repository Analysis
 
 **Date**: 2026-03-18 (updated 2026-03-19)
-**Test suite**: 238/238 passed (4.11s) — 81 new tests added
+**Test suite**: 278/278 passed — 115 new tests added across 4 sessions
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow)
 
 ### Resolution Status
@@ -461,6 +461,152 @@ ralph.sh validation now includes two new checks:
 2. **Orphan route detection (warning)**: When `middleware.ts` exists and contains locale-based redirects, scans for `page.tsx` files outside `[locale]/` and `api/` paths. Reports them as possibly unreachable due to middleware interception. Non-blocking (warning only).
 
 Also fixed pre-existing SyntaxWarnings from invalid escape sequences (`\`` and `\.`) in the ralph.sh f-string template.
+
+#### AUTH-001: ralph.sh auth check updated
+
+ralph.sh no longer checks for `OPENAI_API_KEY`. Codex CLI uses account login (`codex auth login`), not API keys. The auth check now verifies the `codex` CLI is installed and guides the user to log in. (The enrichment pipeline — prd_review, design_reference — still correctly uses `OPENAI_API_KEY` via API.)
+
+#### TODO-APP: Runtime bug fixes (Codex-generated code, not Specwright)
+
+Fixed 9 bugs in `output/todo-app` to make the demo project functional:
+
+| Fix | Root cause |
+|-----|-----------|
+| `import { Layout }` (named, not default) | Codex used default import for named export |
+| `migration-status.ts` — `closeDatabasePool` + `getDbPool` | Codex invented wrong function names |
+| `usePathname()` / `useSearchParams()` null guards | Codex assumed Next.js 15 hooks never return null |
+| Deleted `src/pages/_app.tsx` + `_document.tsx` | Codex created Pages Router files in App Router project |
+| `npm install` — express/cors/helmet missing | Dependencies listed but never installed |
+| DB reset + ran `src/models/migrations/` (31 migrations) | Two migration directories conflicted; `assignee_id` column never created |
+| Deleted orphan `src/lib/migrations/` (3 files) | Dead migrations that conflicted with `src/models/migrations/` |
+| `NEXT_PUBLIC_API_URL` → `NEXT_PUBLIC_API_BASE_URL` | Codex used wrong env var name on home page |
+| Logout `status !== 204` → `!response.ok` | Server returns 200, client expected 204 |
+
+#### Remaining todo-app bugs (Codex-generated, not Specwright)
+
+| Severity | Bug |
+|----------|-----|
+| HIGH | `/todos` and `/reports` return 404 — middleware redirects to `/en/todos` but `[locale]/(app)/todos/page.tsx` doesn't exist |
+| MEDIUM | `src/app/(app)/page.tsx` is orphan — middleware redirects `/` to `/en` |
+| LOW | `next.config.ts` missing (ST-001 CDN not implemented) |
+| LOW | `npm test` is a no-op — no test framework installed |
+
+### Open items (next session)
+
+| Priority | ID | Effort | Impact | Action | Status |
+|----------|----|--------|--------|--------|--------|
+| 1 | STORY-001 | Medium | High | Stories must specify migration directory (`src/lib/migrations/`) explicitly in scope boundaries — Codex created `src/models/migrations/` diverging from scaffold | DONE |
+| 2 | STORY-002 | Medium | High | i18n story must instruct "move ALL existing pages into `[locale]/`" — Codex only duplicated the home page, leaving `/todos` and `/reports` as 404s | DONE |
+| 3 | STORY-003 | Small | Medium | Stories should specify API response contracts (status codes) in acceptance criteria — Codex returned 200 but client expected 204 for logout | DONE |
+| 4 | STORY-004 | Small | Medium | Bootstrap story should set up a test framework (vitest/jest) so `npm test` isn't a no-op — every subsequent story validation relies on it | DONE |
+| 5 | TAG-001 | Tiny | Medium | Create v0.1.0 tag and GitHub release with notes | SKIPPED (tag 0.1.0 already exists; gh CLI not available) |
+| 6 | SCAFFOLD-001 | Small | Medium | `package.json` migration scripts must use same `--migrations-dir` as the template file path to prevent directory divergence | DONE (already consistent) |
+| 7 | QUALITY-001 | Medium | High | Audit quality of generated PRD.md, architecture.md, decisions.md, story files, AGENTS.md, execution-plan.json, and all ralph loop inputs — verify enrichment pipeline produces sufficient context for Codex to implement without ambiguity (migration paths, API contracts, route structure, env var names, test setup) | DONE |
+
+---
+
+## Session 4 — Quality Audit & Story Gaps (2026-03-19)
+
+**Test suite**: 256/256 passed — 12 new tests added
+
+### QUALITY-001: Generated Artifact Audit
+
+Audited all artifacts (PRD.md, architecture.md, decisions.md, stories, AGENTS.md, execution-plan.json) against the 9 Codex bugs from Session 2. Root cause analysis:
+
+| Codex Bug | Root Cause in Artifacts | Fix Applied |
+|-----------|------------------------|-------------|
+| `NEXT_PUBLIC_API_BASE_URL` instead of `NEXT_PUBLIC_API_URL` | AGENTS.md did not enforce env var naming | Added scope boundary: "Use env var names exactly as in .env.example" to AGENTS.md |
+| Named vs default import (`Layout`) | Not preventable via story (code-level mistake) | — |
+| `src/pages/_app.tsx` and `_document.tsx` created | AGENTS.md lacked explicit App Router instruction | Added "Do NOT create files in src/pages/" to AGENTS.md global scope boundaries |
+| Orphan route `/page.tsx` outside `[locale]/` | No i18n story existed at all | STORY-002: Created `feature.i18n-setup` story with explicit instructions |
+| `.env.local` missing | Already fixed in Session 2 (BUG-005/BUG-006) | — |
+| Migration in `src/models/migrations/` instead of `src/lib/migrations/` | Stories lacked migration directory specification | STORY-001: Added `_MIGRATION_DIR_BOUNDARY` to all schema-changing stories |
+| `migration_cmd:create` concatenation in AGENTS.md | AGENTS.md used old `{migration_cmd}:create` pattern | Fixed to use separate `{migration_create}` variable |
+| Logout returned 200 but client expected 204 | Auth story had no status code contracts | STORY-003: Added HTTP status codes to auth acceptance criteria |
+| `npm test` was a no-op throughout | Bootstrap story didn't set up test framework | STORY-004: Added vitest/jest requirement to bootstrap.repository |
+
+### Changes Applied
+
+#### STORY-001: Migration directory scope boundary
+- Added `_MIGRATION_DIR_BOUNDARY` constant to story_engine.py
+- Applied to: `bootstrap.database`, `feature.authentication`, `feature.roles`, `feature.media-library`, `product.todo-model`
+- Text: "All migrations MUST be created in `src/lib/migrations/` using `npm run db:migrate:create`"
+
+#### STORY-002: i18n story generation
+- Created new `feature.i18n-setup` story (generated when `i18n` in capabilities)
+- Acceptance criteria: middleware setup, ALL pages moved into `[locale]/`, LocaleSwitcher, translation files
+- Scope boundary: explicitly warns that orphan routes outside `[locale]/` will return 404
+- Expected files: `middleware.ts`, `[locale]/layout.tsx`, `LocaleSwitcher`, message catalogs
+
+#### STORY-003: API response contracts
+- Auth story acceptance criteria now include HTTP status codes:
+  - `POST /api/auth/register` → 201 success, 400 validation, 409 duplicate
+  - `POST /api/auth/login` → 200 + token success, 401 invalid
+  - `POST /api/auth/logout` → 200 success
+
+#### STORY-004: Test framework in bootstrap
+- `bootstrap.repository` now requires vitest (or jest) installation
+- Acceptance criteria: real test runner, at least one smoke test
+- Expected files: `vitest.config.ts`, `src/__tests__/smoke.test.ts`
+- Validation: `npm test` added to commands
+
+#### SCAFFOLD-001: Migration directory consistency
+- Already consistent — scaffold_engine.py uses `--migrations-dir src/lib/migrations` in all three scripts
+- Stories now enforce the same path via `_MIGRATION_DIR_BOUNDARY`
+
+#### AGENTS.md quality improvements
+- Fixed migration workflow to use separate `{migration_create}` and `{migration_status}` variables (not concatenation)
+- Added migration directory instruction: `src/lib/migrations/`
+- Added global scope boundaries: no `src/pages/`, enforce `.env.example` variable names
+
+#### Tests added (12 new, 256 total)
+- `test_database_story_has_migration_dir_boundary`
+- `test_auth_story_has_migration_dir_boundary`
+- `test_todo_model_has_migration_dir_boundary`
+- `test_i18n_capability_generates_story`
+- `test_i18n_story_warns_about_orphan_routes`
+- `test_i18n_story_requires_moving_all_pages`
+- `test_auth_story_has_status_codes`
+- `test_bootstrap_repo_requires_test_framework`
+- `test_codex_agents_md_has_migration_directory`
+- `test_codex_agents_md_uses_separate_migration_commands`
+- `test_codex_agents_md_forbids_src_pages`
+- `test_codex_agents_md_enforces_env_var_names`
+
+### PRD / Architecture / Decisions Generator Rewrite
+
+**Test suite**: 278/278 passed — 22 new tests added for generators
+
+#### Problem
+- **PRD.md** (4/10): Generic problem statement, placeholder personas, no scope, dumped 37 architecture decisions
+- **architecture.md** (7/10 → degraded by decisions dump): Good structural content but duplicated decisions from decisions.md
+- **decisions.md** (3/10): 37 decisions where DEC-007 to DEC-037 all had "This decision was derived in the generated architecture" as reason
+
+#### Changes
+
+**`write_prd()` rewritten:**
+- Problem statement derived from `app_shape` (concrete text per archetype, not generic)
+- Personas derived from `domain_model.roles` (e.g. "User: Can create_task, read_own_tasks") instead of "Primary User: Accomplish core workflows"
+- Scope in/out derived from features + capabilities (e.g. "Out of Scope: Public-facing marketing site" when no public-site capability)
+- Architecture decisions dump REMOVED — lives in decisions.md only
+- Discovery signals and story overview kept (compact)
+
+**`write_architecture()` rewritten:**
+- Components, communication, boundaries, request flows: KEPT (these were good)
+- Raw decisions dump at end: REMOVED
+- New "Key Constraints" section added: migration directory, env var naming, App Router rule, i18n routing
+- Cross-references `decisions.md` instead of duplicating
+
+**`write_decisions()` rewritten:**
+- DEC-001 to DEC-004: meta-decisions (source of truth, architecture stability, stack, capabilities) — compact format
+- Architecture decisions: deduplicated with word-overlap algorithm (70% threshold), categorized (Security, Domain, Performance, Operations, Architecture)
+- Each decision has a real reason derived from content (e.g. "Reduces latency and server load for static content" instead of "derived in the generated architecture")
+- Result: ~60 lines instead of 310 lines for the same input
+
+**Tests added (22 new, 278 total):**
+- PRD: project name, concrete problem statement, concrete personas, scope, no decision dump, stories, signals
+- Architecture: components, communication, boundaries, request flow, background jobs, no decision dump, key constraints, i18n
+- Decisions: project constraints, stack, deduplication, real reasons, categories, line count < 100
 
 ---
 

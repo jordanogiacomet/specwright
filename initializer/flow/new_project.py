@@ -90,38 +90,221 @@ def write_json(path, data):
 
 
 def write_prd(path, spec):
-    content = f"""
-# {spec['answers']['project_name']}
+    """Write a PRD that gives an AI agent enough context to implement the project.
 
-## Summary
+    The PRD is a human-readable summary — NOT a dump of the spec.
+    Detailed implementation guidance lives in stories, AGENTS.md, and architecture.md.
+    """
+    answers = spec.get("answers", {})
+    stack = spec.get("stack", {})
+    features = spec.get("features", [])
+    capabilities = spec.get("capabilities", [])
+    stories = spec.get("stories", [])
+    signals = {}
+    discovery = spec.get("discovery", {})
+    if isinstance(discovery, dict):
+        signals = discovery.get("decision_signals", {})
+        if not isinstance(signals, dict):
+            signals = {}
+    intelligence = spec.get("prd_intelligence", {})
+    domain_model = spec.get("domain_model", {})
 
-{spec['answers']['summary']}
+    project_name = answers.get("project_name", "Unnamed Project")
+    summary = answers.get("summary", "")
+    app_shape = signals.get("app_shape", "web application")
+    primary_audience = signals.get("primary_audience", "users")
+    core_work_features = signals.get("core_work_features", [])
+    if not isinstance(core_work_features, list):
+        core_work_features = []
 
-## Stack
+    lines = [f"# {project_name}", ""]
 
-Frontend: {spec['stack']['frontend']}
-Backend: {spec['stack']['backend']}
-Database: {spec['stack']['database']}
+    # --- Problem Statement ---
+    problem = intelligence.get("problem_statement", "")
+    if not problem:
+        # Generate a concrete problem statement from signals
+        if app_shape == "todo-list" or spec.get("archetype") == "todo-app":
+            problem = f"Users need a simple way to create, organize, and track personal tasks with priorities and due dates."
+        elif app_shape == "backoffice":
+            problem = f"Internal teams need a centralized tool to manage operational workflows, track progress, and generate reports."
+        elif app_shape == "client-portal":
+            problem = f"Clients need a self-service portal to submit requests, track status, and communicate with the internal team."
+        elif app_shape == "content-platform":
+            problem = f"Content teams need an editorial workflow to create, review, publish, and manage content across channels."
+        elif app_shape == "internal-work-organizer":
+            problem = f"Teams need a structured system to organize work items, assign tasks, track deadlines, and report on progress."
+        else:
+            # Use summary directly when app_shape is unknown or generic
+            if app_shape in ("unknown", "generic-web-app", "web application"):
+                problem = summary
+            else:
+                problem = f"{summary.rstrip('.')} — a {app_shape.replace('-', ' ')} for {primary_audience.replace('_', ' ')}."
 
-## Features
-"""
+    lines.append("## Problem Statement")
+    lines.append("")
+    lines.append(problem)
+    lines.append("")
 
-    for feature in spec["features"]:
-        content += f"- {feature}\n"
+    # --- Summary ---
+    lines.append("## Summary")
+    lines.append("")
+    lines.append(summary)
+    lines.append("")
 
-    content += "\n## Architecture Decisions\n"
-    for decision in spec["architecture"]["decisions"]:
-        content += f"- {decision}\n"
+    # --- Personas ---
+    personas = intelligence.get("personas", [])
+    if not personas:
+        # Derive concrete personas from signals
+        personas = []
+        entities = domain_model.get("entities", [])
+        roles = domain_model.get("roles", [])
+        if roles:
+            for role in roles:
+                name = role.get("name", "user")
+                perms = role.get("can", [])
+                goal = f"Can {', '.join(perms[:3])}" if perms else "Access the application"
+                personas.append({"name": name.title(), "goal": goal})
+        else:
+            if primary_audience == "internal_teams":
+                personas = [
+                    {"name": "Team Member", "goal": "Manage assigned work items and track deadlines"},
+                    {"name": "Team Lead", "goal": "Monitor team progress and generate reports"},
+                ]
+            elif primary_audience == "mixed":
+                personas = [
+                    {"name": "Authenticated User", "goal": "Create and manage personal data within the application"},
+                    {"name": "Administrator", "goal": "Manage users and system configuration"},
+                ]
+            else:
+                personas = [
+                    {"name": "End User", "goal": "Use the application's core features"},
+                    {"name": "Administrator", "goal": "Manage users and configuration"},
+                ]
+
+    lines.append("## Personas")
+    lines.append("")
+    for persona in personas:
+        name = persona.get("name", "?") if isinstance(persona, dict) else str(persona)
+        goal = persona.get("goal", "") if isinstance(persona, dict) else ""
+        lines.append(f"- **{name}**: {goal}")
+    lines.append("")
+
+    # --- Scope ---
+    scope = intelligence.get("scope", {})
+    in_scope = scope.get("in_scope", [])
+    out_of_scope = scope.get("out_of_scope", [])
+    if not in_scope:
+        in_scope = []
+        if "authentication" in features:
+            in_scope.append("User registration, login, logout, and session management")
+        _feat_descriptions = {
+            "api": "REST API for data access and business logic",
+            "roles": "Role-based access control with permission enforcement",
+            "notifications": "In-app notification system for events",
+            "media-library": "Media upload, storage, and management",
+            "draft-publish": "Content draft and publish workflow",
+            "preview": "Content preview for unpublished items",
+            "search": "Search functionality across application data",
+            "payments": "Payment processing integration",
+            "billing": "Subscription billing and management",
+            "analytics": "Usage analytics and tracking",
+            "scheduled-publishing": "Scheduled content publishing via background jobs",
+        }
+        for feat in features:
+            if feat != "authentication":
+                desc = _feat_descriptions.get(feat, f"{feat.replace('-', ' ').title()}")
+                in_scope.append(desc)
+        for cwf in core_work_features:
+            in_scope.append(f"{cwf.replace('-', ' ').title()} support")
+        if not in_scope:
+            in_scope = ["Core application workflows"]
+    if not out_of_scope:
+        out_of_scope = []
+        if "public-site" not in capabilities:
+            out_of_scope.append("Public-facing marketing site or SEO pages")
+        if "cms" not in capabilities:
+            out_of_scope.append("Content management or editorial workflows")
+        if "i18n" not in capabilities:
+            out_of_scope.append("Multi-language / internationalization")
+        if "scheduled-jobs" not in capabilities:
+            out_of_scope.append("Background jobs or scheduled tasks")
+        if not out_of_scope:
+            out_of_scope = ["Features not listed in the spec"]
+
+    lines.append("## Scope")
+    lines.append("")
+    lines.append("### In Scope")
+    lines.append("")
+    for item in in_scope:
+        lines.append(f"- {item}")
+    lines.append("")
+    lines.append("### Out of Scope")
+    lines.append("")
+    for item in out_of_scope:
+        lines.append(f"- {item}")
+    lines.append("")
+
+    # --- Stack ---
+    lines.append("## Stack")
+    lines.append("")
+    lines.append(f"- Frontend: {stack.get('frontend', 'unknown')}")
+    lines.append(f"- Backend: {stack.get('backend', 'unknown')}")
+    lines.append(f"- Database: {stack.get('database', 'unknown')}")
+    lines.append("")
+
+    # --- Features & Capabilities ---
+    lines.append("## Features")
+    lines.append("")
+    for feature in features:
+        lines.append(f"- {feature}")
+    lines.append("")
+
+    if capabilities:
+        lines.append("## Capabilities")
+        lines.append("")
+        for cap in capabilities:
+            lines.append(f"- {cap}")
+        lines.append("")
+
+    # --- Story overview (compact) ---
+    if stories:
+        lines.append("## Stories")
+        lines.append("")
+        for story in stories:
+            sid = story.get("id", "?")
+            title = story.get("title", "?")
+            lines.append(f"- **{sid}**: {title}")
+        lines.append("")
+        lines.append(f"Total: {len(stories)} stories. See `docs/stories/` for full details.")
+        lines.append("")
+
+    # --- Discovery signals (compact) ---
+    if signals:
+        lines.append("## Discovery Signals")
+        lines.append("")
+        for key, value in signals.items():
+            lines.append(f"- **{key}**: {value}")
+        lines.append("")
+
+    content = "\n".join(lines)
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
 
 
 def write_architecture(path, spec):
-    """Write enriched architecture.md with components, communication, boundaries, and decisions."""
+    """Write architecture.md with components, communication, boundaries, and request flows.
+
+    Architectural decisions are NOT duplicated here — they live in decisions.md only.
+    This file focuses on the structural view: what components exist, how they communicate,
+    and what each layer is responsible for.
+    """
     arch = spec["architecture"]
     stack = spec.get("stack", {})
     features = spec.get("features", [])
+    capabilities = spec.get("capabilities", [])
+    database = stack.get("database", "postgres")
+    backend = stack.get("backend", "node-api")
 
     lines = ["# Architecture", ""]
 
@@ -236,15 +419,20 @@ def write_architecture(path, spec):
         lines.append("5. Worker logs outcome for observability")
         lines.append("")
 
-    # --- Decisions ---
-    decisions = arch.get("decisions", [])
-    if decisions:
-        lines.append("## Architectural Decisions")
-        lines.append("")
-
-        for decision in decisions:
-            lines.append(f"- {decision}")
-        lines.append("")
+    # --- Key constraints (compact, no duplication with decisions.md) ---
+    lines.append("## Key Constraints")
+    lines.append("")
+    lines.append(f"- Database: `{database}` — all migrations in `src/lib/migrations/`")
+    if backend in ("payload", "payload-cms"):
+        lines.append(f"- Backend: Payload CMS — collections in `src/collections/`, admin at `/admin`")
+    else:
+        lines.append(f"- Backend: `{backend}` — API routes in `src/app/api/` or `src/api/`")
+    lines.append("- Environment: use variable names exactly as in `.env.example`")
+    lines.append("- Router: App Router only (`src/app/`) — do NOT use `src/pages/`")
+    if "i18n" in capabilities:
+        lines.append("- i18n: all pages under `src/app/[locale]/` — middleware redirects `/` to `/{defaultLocale}`")
+    lines.append("- See `decisions.md` for full architectural decisions")
+    lines.append("")
 
     content = "\n".join(lines)
 
@@ -252,88 +440,158 @@ def write_architecture(path, spec):
         f.write(content)
 
 
+def _categorize_decision(decision_text: str) -> tuple[str, str]:
+    """Return (category, reason) for an architecture decision.
+
+    Derives a meaningful reason from the decision content instead of
+    the generic "derived in the generated architecture".
+    """
+    text = decision_text.lower()
+
+    if "cdn" in text or "cache" in text or "static asset" in text:
+        return "performance", "Reduces latency and server load for static/public content"
+    if "ssr" in text or "isr" in text or "seo" in text:
+        return "performance", "Improves SEO and initial page load for public-facing pages"
+    if "logging" in text or "monitoring" in text or "health check" in text:
+        return "operations", "Enables observability and early detection of production issues"
+    if "backup" in text:
+        return "operations", "Protects against data loss and enables disaster recovery"
+    if "connection pool" in text:
+        return "performance", "Prevents connection exhaustion under concurrent load"
+    if "cms" in text or "content" in text or "collection" in text:
+        return "data", "Enables structured content management with editorial workflows"
+    if "migration" in text or "locale" in text or "i18n" in text:
+        return "data", "Required by the project's internationalization or schema management strategy"
+    if "worker" in text or "background" in text or "scheduled" in text or "job" in text:
+        return "architecture", "Decouples long-running tasks from the request-response cycle"
+    if "auth" in text or "session" in text or "jwt" in text:
+        return "security", "Defines the authentication and session management strategy"
+    if "todo" in text or "data-model" in text or "filtering" in text:
+        return "domain", "Defines the core data model and query patterns for the application"
+    if "publishing" in text or "draft" in text:
+        return "domain", "Defines the content lifecycle and publishing workflow"
+    return "architecture", "Shapes implementation to match the project's requirements"
+
+
 def write_decisions(path, spec):
+    """Write decisions.md with deduplicated, categorized decisions.
+
+    Only includes decisions that are actionable for an AI agent.
+    Each decision has a real reason derived from its content.
+    """
     answers = spec.get("answers", {})
     stack = spec.get("stack", {})
     capabilities = spec.get("capabilities", [])
     architecture = spec.get("architecture", {})
     architecture_decisions = architecture.get("decisions", [])
 
-    content = f"""# decisions.md
+    lines = [
+        "# decisions.md",
+        "",
+        "## Purpose",
+        "",
+        "Stable project decisions that agents MUST respect during implementation.",
+        "Consult this file before making architectural changes.",
+        "",
+        "---",
+        "",
+        "## Project Constraints",
+        "",
+        "### DEC-001: Source of truth",
+        "- **Status:** accepted",
+        "- **Decision:** `spec.json` is the primary source of truth. `docs/stories/` defines implementation units.",
+        "- **Reason:** Story-by-story execution reduces drift and enables per-story validation.",
+        "- **Rule:** Consult `spec.json` before changing architecture or scope. Implement one story at a time.",
+        "",
+        "### DEC-002: Architecture stability",
+        "- **Status:** accepted",
+        "- **Decision:** Generated architecture is stable. Do not redesign during implementation.",
+        "- **Reason:** Architecture was derived from the spec by Specwright's pipeline.",
+        "- **Rule:** Only change architecture if a story explicitly requires it.",
+        "",
+        f"### DEC-003: Stack",
+        "- **Status:** accepted",
+        f"- **Decision:** frontend=`{stack.get('frontend', '?')}`, backend=`{stack.get('backend', '?')}`, database=`{stack.get('database', '?')}`, deploy=`{answers.get('deploy_target', '?')}`.",
+        "- **Rule:** All implementation choices must align with this stack.",
+        "",
+        f"### DEC-004: Capabilities",
+        "- **Status:** accepted",
+        f"- **Decision:** Active capabilities: `{', '.join(capabilities) if capabilities else 'none'}`.",
+        "- **Rule:** Do NOT add behaviors outside this capability set.",
+        "",
+    ]
 
-## Purpose
+    # --- Deduplicate and categorize architecture decisions ---
+    if architecture_decisions:
+        # Deduplicate by normalizing — two decisions are duplicates if:
+        # 1. Exact same text, OR
+        # 2. One is a substring of the other, OR
+        # 3. They share >70% of their significant words
+        def _sig_words(text):
+            stop = {"the", "a", "an", "is", "are", "for", "and", "or", "in", "to", "of",
+                     "when", "with", "should", "be", "use", "this", "that", "it"}
+            return {w for w in text.lower().split() if w not in stop and len(w) > 2}
 
-This file records stable project decisions for this generated project.
+        seen_texts = []
+        seen_words = []
+        unique_decisions = []
+        for d in architecture_decisions:
+            normalized = d.lower().strip().rstrip(".")
+            words = _sig_words(normalized)
 
-Use it to reduce drift during agent execution.
+            is_dup = False
+            for i, prev in enumerate(seen_texts):
+                # Substring check
+                if normalized in prev or prev in normalized:
+                    is_dup = True
+                    break
+                # Word overlap check
+                prev_words = seen_words[i]
+                if words and prev_words:
+                    overlap = len(words & prev_words) / min(len(words), len(prev_words))
+                    if overlap > 0.7:
+                        is_dup = True
+                        break
 
----
+            if is_dup:
+                continue
+            seen_texts.append(normalized)
+            seen_words.append(words)
+            unique_decisions.append(d)
 
-## Status labels
+        # Group by category
+        categorized: dict[str, list[tuple[str, str]]] = {}
+        for d in unique_decisions:
+            cat, reason = _categorize_decision(d)
+            categorized.setdefault(cat, []).append((d, reason))
 
-- `accepted`
-- `superseded`
-- `provisional`
+        category_titles = {
+            "security": "Security & Auth",
+            "performance": "Performance & Delivery",
+            "operations": "Operations & Observability",
+            "data": "Data & Content",
+            "domain": "Domain Model",
+            "architecture": "Architecture",
+        }
 
----
+        lines.append("## Architecture Decisions")
+        lines.append("")
 
-## Decisions
+        dec_index = 5
+        for cat in ["security", "domain", "data", "architecture", "performance", "operations"]:
+            entries = categorized.get(cat, [])
+            if not entries:
+                continue
+            title = category_titles.get(cat, cat.title())
+            lines.append(f"### {title}")
+            lines.append("")
+            for decision_text, reason in entries:
+                lines.append(f"**DEC-{dec_index:03d}**: {decision_text}")
+                lines.append(f"- Reason: {reason}")
+                lines.append("")
+                dec_index += 1
 
-### DEC-001
-- **Date:** generated
-- **Status:** accepted
-- **Decision:** `spec.json` is the primary structured source of truth for this generated project.
-- **Reason:** This project folder was generated from the initializer and should be implemented from the generated spec.
-- **Consequences:** Execution agents should consult `spec.json` before changing architecture or scope.
-
-### DEC-002
-- **Date:** generated
-- **Status:** accepted
-- **Decision:** `docs/stories/` defines the preferred unit of implementation work.
-- **Reason:** Story-by-story execution reduces drift and improves validation.
-- **Consequences:** Agents should implement one story at a time and record progress after each meaningful iteration.
-
-### DEC-003
-- **Date:** generated
-- **Status:** accepted
-- **Decision:** Generated architecture should remain stable unless a story explicitly changes it.
-- **Reason:** The initializer already derived the architecture from the project spec.
-- **Consequences:** Agents should not silently redesign the system during routine implementation work.
-
-### DEC-004
-- **Date:** generated
-- **Status:** accepted
-- **Decision:** Use surface `{answers.get("surface", "unknown")}` with deploy target `{answers.get("deploy_target", "unknown")}`.
-- **Reason:** These values are explicit project inputs.
-- **Consequences:** Implementation should respect product shape and deployment assumptions derived from them.
-
-### DEC-005
-- **Date:** generated
-- **Status:** accepted
-- **Decision:** Use stack frontend=`{stack.get("frontend", "unknown")}`, backend=`{stack.get("backend", "unknown")}`, database=`{stack.get("database", "unknown")}`.
-- **Reason:** Stack was derived as part of the generated project contract.
-- **Consequences:** Code generation and implementation decisions should remain aligned with this stack.
-
-### DEC-006
-- **Date:** generated
-- **Status:** accepted
-- **Decision:** Capabilities for this generated project are `{", ".join(capabilities) if capabilities else "none"}`.
-- **Reason:** Capabilities shape downstream behavior and implementation scope.
-- **Consequences:** Agents should not add behaviors that conflict with the generated capability set.
-"""
-
-    next_index = 7
-    for decision in architecture_decisions:
-        content += f"""
-
-### DEC-{next_index:03}
-- **Date:** generated
-- **Status:** accepted
-- **Decision:** {decision}
-- **Reason:** This decision was derived in the generated architecture.
-- **Consequences:** Implementation should respect this architectural constraint.
-"""
-        next_index += 1
+    content = "\n".join(lines)
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)

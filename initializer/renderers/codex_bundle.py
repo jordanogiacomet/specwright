@@ -94,7 +94,10 @@ def _build_agents_md(spec: dict[str, Any]) -> str:
 
     do_not_section = "\n".join(do_not_rules) if do_not_rules else "- No specific restrictions"
 
-    migration_cmd = _detect_migration_command(spec)
+    migration_cmds = _detect_migration_commands(spec)
+    migration_cmd = migration_cmds["run"]
+    migration_create = migration_cmds["create"]
+    migration_status = migration_cmds["status"]
     backend = stack.get("backend", "unknown")
 
     # --- Project structure section ---
@@ -208,6 +211,8 @@ The ralph.sh script will tell you which story to implement.
 - Do NOT redesign the architecture
 - Do NOT add features not listed in the spec
 - Do NOT skip to later stories — implement only what is asked
+- Do NOT create files in `src/pages/` — this project uses the App Router (`src/app/`) exclusively
+- Use environment variable names exactly as defined in `.env.example` — do NOT rename or invent alternatives (e.g. use `NEXT_PUBLIC_API_URL` not `NEXT_PUBLIC_API_BASE_URL`)
 {structure_section}{domain_section}
 ## Database migrations — CRITICAL
 
@@ -220,12 +225,14 @@ This includes:
 - Changing field types or validation rules
 - Adding relationships between collections
 
+**Migration directory: `src/lib/migrations/`** — ALL migration files MUST go here. Do NOT create migrations in any other directory (e.g. `src/models/migrations/`).
+
 Migration workflow:
 1. Make the schema change (edit collection file)
-2. Generate a migration: `{migration_cmd}:create`
+2. Generate a migration: `{migration_create}`
 3. Implement the migration (use `_pgm` as the parameter name to avoid lint warnings, e.g. `exports.up = (_pgm) => {{ ... }}`)
 4. Run the migration: `{migration_cmd}`
-5. Verify the migration ran: `{migration_cmd}:status`
+5. Verify the migration ran: `{migration_status}`
 
 **If you skip this step, the application will crash at runtime with "relation does not exist" errors.**
 
@@ -328,16 +335,18 @@ fi
 # -------------------------------------------------------
 
 if [[ "$DRY_RUN" == false ]]; then
-    if [[ -z "${{OPENAI_API_KEY:-}}" ]]; then
-        echo "Error: OPENAI_API_KEY is not set."
+    if ! command -v codex &> /dev/null; then
+        echo "Error: Codex CLI is not installed."
         echo ""
-        echo "Set it with:"
-        echo "  export OPENAI_API_KEY=sk-..."
+        echo "Install it with:"
+        echo "  npm install -g @openai/codex"
         echo ""
-        echo "Then run this script again."
+        echo "Then log in with:"
+        echo "  codex auth login"
+        echo ""
         exit 1
     fi
-    echo "Auth: OK (OPENAI_API_KEY is set)"
+    echo "Auth: OK (Codex CLI installed — uses your logged-in account)"
     echo ""
 fi
 
