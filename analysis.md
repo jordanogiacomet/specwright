@@ -1,7 +1,7 @@
 # Specwright — Full Repository Analysis
 
 **Date**: 2026-03-18 (updated 2026-03-19)
-**Test suite**: 278/278 passed — 117 new tests added across 5 sessions
+**Test suite**: 311/311 passed — 137 new tests added across 6 sessions
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow), `output/editorial-control-center` (Payload editorial)
 
 ### Resolution Status
@@ -98,6 +98,73 @@
 - The Payload scaffold was silently broken for `next build` in two ways (wrong import path + missing `serverFunction`). Neither would surface until a real build was attempted — unit tests only checked file existence, not import correctness.
 - The editorial-control-center project (Next.js + Payload v3.79 + Postgres) is now the most thoroughly validated generated project: every step from spec to running app was verified.
 - Lint is now fully clean (0 warnings) on generated Payload projects.
+
+---
+
+## Session 5 — Story Quality Audit for editorial-control-center (2026-03-19)
+
+### Methodology
+
+Read all 14 generated story files, spec.json, architecture.md, PRD.md, decisions.md, AGENTS.md, ralph.sh, execution-plan.json, commands.json, repo-contract.json, and manifest.json. Assessed each story for: acceptance criteria specificity, testability, scope clarity, expected files, and dependency correctness. Identified cross-story gaps.
+
+### Fully executable stories (no issues)
+
+| Story | Title | Notes |
+|-------|-------|-------|
+| ST-003 | Initialize project repository | Excellent AC, 14 items, specific and testable |
+| ST-004 | Setup database | Good AC, clear migration instructions |
+| ST-005 | Setup backend service | Good AC, Payload config + admin panel |
+| ST-006 | Create frontend application | Adequate AC, route groups defined |
+| ST-007 | Implement authentication | Excellent AC, specific HTTP status codes |
+| ST-900 | Setup monitoring and logging | Good AC, health check + structured logging |
+| ST-901 | Implement backups | Excellent AC, pg_dump + restore scripts |
+
+### Partially executable stories (ambiguous but Codex can likely resolve)
+
+| Story | Title | Gap |
+|-------|-------|-----|
+| ST-008 | RBAC | "editor" and "reviewer" roles referenced but not clearly defined — AGENTS.md does define 3 roles but stories are inconsistent |
+| ST-010 | Draft/publish workflow | "published content visible through appropriate surface" — no public rendering story exists |
+| ST-011 | Content preview | URL scheme not specified, slug field not defined in content model |
+
+### Not executable as written (missing infrastructure or unclear scope)
+
+| Story | Title | Blocker |
+|-------|-------|---------|
+| ST-001 | Define CMS content model | Does not enumerate which collections to create — spec.json defines 4 collections + 2 globals but story says only "content collections" |
+| ST-002 | Configure CDN | References "public assets" and "public routes" that don't exist; untestable locally |
+| ST-009 | Implement media library | S3/object storage mentioned in architecture but no story configures it |
+| ST-012 | Implement scheduled publishing | Requires background job infrastructure that no story creates |
+
+### Critical cross-story gaps
+
+1. **Public site rendering has no owner** — spec says `admin_plus_public_site` mode; architecture mentions public routes; ST-010/011/012 reference "published content visible" — but no story implements `/posts/[slug]`, `/pages/[slug]`, or any public content page.
+
+2. **S3 object storage not assigned** — architecture.md says media goes to S3-compatible storage; ST-009 (media library) doesn't configure S3 client or env vars; will default to local filesystem or fail.
+
+3. **Background job runner not assigned** — ST-012 (scheduled publishing) needs a cron/job runner; Payload has no built-in background jobs; no story sets up Bull, BullMQ, or node-cron.
+
+4. **Role definitions inconsistent** — AGENTS.md defines admin/editor/reviewer with detailed permissions; ST-008 says "admin and default user"; ST-010 says "reviewer or admin". Codex will get conflicting signals.
+
+5. **ST-001 scope too vague** — spec.json defines collections (pages, posts, authors, media) with fields, globals (site-settings, homepage), and relationships (posts → authors). The story just says "define content collections" without enumerating them.
+
+6. **ST-002 (CDN) is premature** — depends on `bootstrap.frontend` but references "public routes" that won't exist until much later. Likely to produce boilerplate with no real value.
+
+### Recommended fixes before ralph execution
+
+These should be applied to the **generator** (story engine, enrichment templates) for lasting value, or at minimum to the generated story files in `output/editorial-control-center/docs/stories/`:
+
+1. **Enrich ST-001** — enumerate all collections from spec.json (pages, posts, authors, media), list expected fields per collection, define relationships, specify which collections support draft/publish.
+
+2. **Add a public rendering story** (or fold into ST-010) — implement `/posts/[slug]` and `/pages/[slug]` route groups, integrate with draft/publish visibility.
+
+3. **Enrich ST-009** — either configure S3-compatible storage (minio for local dev) or explicitly state "use Payload's local filesystem adapter for initial implementation".
+
+4. **Enrich ST-012** — specify job runner choice (e.g., node-cron for simplicity), define cron expression, add idempotency requirement.
+
+5. **Normalize role definitions** — update ST-008 and ST-010 to reference the canonical 3-role model defined in AGENTS.md (admin, editor, reviewer).
+
+6. **Reconsider ST-002** — either defer CDN to after public site exists, or redefine as "configure Next.js static asset headers and Image component optimization".
 
 ---
 
@@ -906,101 +973,74 @@ Remaining without dedicated tests:
 
 10. Updated this `analysis.md` with the fixes, validations, and handoff notes.
 
-### Current working tree (updated after Session 4)
+### Current working tree (updated after Session 6)
 
 At the time of this handoff, `git status --short` shows:
 
 ```text
  M analysis.md
- M initializer/flow/new_project.py
- M initializer/renderers/scaffold_engine.py
- M tests/unit/test_scaffold_engine.py
-?? package-lock.json
-?? tests/unit/test_spec_loader.py
+ M initializer/capabilities/cms.py
+ M initializer/capabilities/public_site.py
+ M initializer/engine/story_engine.py
+ ?? tests/unit/test_cms_capability.py
+ ?? tests/unit/test_public_site_capability.py
 ```
 
-Notes:
-- `analysis.md` — updated with Session 4 findings.
-- `initializer/flow/new_project.py` — YAML spec support (Session 3).
-- `initializer/renderers/scaffold_engine.py` — Payload import path fix + serverFunction + not-found template (Session 4).
-- `tests/unit/test_scaffold_engine.py` — 2 new regression tests (Session 4, 54 total).
-- `tests/unit/test_spec_loader.py` — new file, YAML loader regression tests (Session 3).
-- `package-lock.json` — unrelated, should be `.gitignore`d or committed separately.
+All 6 story quality issues from Session 5 have been fixed at the **generator level**. Tests: 311/311 passed. Changes are unstaged — need commit + regenerate editorial-control-center + re-validate.
 
 ### Most relevant validations already run
 
 ```text
-54 passed in tests/unit/test_scaffold_engine.py
-7 passed in tests/unit/test_spec_loader.py + related loader/input tests
-real editorial-control-center app: npm test, npm run lint, npm run build, npm run dev all passed
-GET / -> 200 OK
-GET /admin -> 200 OK (Payload admin panel)
+311 passed (full pytest suite — 20 new tests added in Session 6)
+39 passed in the 3 files directly testing the 6 fixes
 ```
 
 ### What still remains valuable to do next
 
-1. Clean the git state and commit:
-   - decide whether `package-lock.json` should be included or ignored
-   - stage intentional changes: `analysis.md`, `initializer/flow/new_project.py`, `initializer/renderers/scaffold_engine.py`, `tests/unit/test_scaffold_engine.py`, `tests/unit/test_spec_loader.py`
+1. **Commit Session 6 changes** — all 6 generator fixes + 20 new tests.
 
-2. Run the full test suite (`pytest`) to confirm no regressions across all 278+ tests.
+2. **Regenerate editorial-control-center** — `initializer new --spec examples/next-payload-postgres.input.yaml --output output/editorial-control-center --force` and then `initializer prepare output/editorial-control-center`.
 
-3. Consider running a full `ralph.sh` execution (not `--dry-run`) on editorial-control-center to validate Codex story execution end-to-end.
+3. **Re-validate** — npm install/test/lint/build on the regenerated project. Verify the new stories appear (public site rendering, enriched content model, etc.).
 
-4. Consider pinning the Payload version range in `_payload_package_json()` to avoid future API drift (v3.79+ requires `serverFunction`).
+4. **Run `ralph.sh`** (not `--dry-run`) to execute all stories with Codex.
 
-### Prompt for Claude Code
+5. Consider pinning Payload version range in `_payload_package_json()` to avoid future API drift.
 
-Use this prompt verbatim in the next chat:
+### Prompt for Codex
+
+Use this prompt verbatim in Codex:
 
 ```text
-You are continuing work on the Specwright repository at /home/jordanogiacomet/specwright.
+You are continuing work on the Specwright repository.
 
-Read /home/jordanogiacomet/specwright/analysis.md first, especially:
-- "Session 4 — Editorial Validation and Payload v3.79 Compatibility (2026-03-19)"
-- "Current Handoff Snapshot (2026-03-19)"
+Read analysis.md — focus on "Session 6" and "Current Handoff Snapshot".
 
-Current important repo state:
-- YAML support for `--spec` in `initializer/flow/new_project.py`
-- Payload scaffold fixes in `initializer/renderers/scaffold_engine.py` (importMap path, serverFunction, not-found)
-- regression tests in `tests/unit/test_scaffold_engine.py` (54 tests) and `tests/unit/test_spec_loader.py`
-- `analysis.md` updated with full handoff
-- `package-lock.json` is untracked and may be unrelated
+Context:
+- Branch: fix/ralph-evidence
+- Last commit: 8c944f7. Session 6 changes are unstaged.
+- 311 tests pass. All 6 story quality issues from Session 5 are fixed at generator level.
 
-What Codex already completed:
-- fixed invalid-input crash in `prompt_choice()`
-- fixed `_detect_commands()` return shape
-- fixed `prepare` overwriting detected `.openclaw/commands.json`
-- cleaned tracked bytecode artifacts from git
-- hardened generated Next scaffold lint/test setup
-- added real smoke test generation
-- added YAML/YML support for `--spec`
-- validated with focused pytest runs and real scaffold smoke tests
+Session 6 completed (all generator-level fixes):
+1. CMS capability (cms.py): enumerates collections/globals from spec.guided_answers.content_model in acceptance criteria and expected_files
+2. Role normalization (story_engine.py): _get_role_names() pulls roles from spec.answers.guided_answers.roles_and_access.admin_roles; used in feature.roles and feature.draft-publish
+3. Media library (story_engine.py): _get_storage_backend() reads spec storage_requirements; local_filesystem → "use Payload local disk adapter", else → S3
+4. Scheduled publishing (story_engine.py): acceptance criteria now specify node-cron, cron interval, idempotency, logging; scope says no Bull/BullMQ
+5. CDN → static delivery (public_site.py): renamed to "Configure static asset delivery" with story_key "infra.static-delivery"; criteria: Next.js Image, cache headers, no external CDN
+6. Public site rendering (story_engine.py): new story "product.public-site-rendering" when cms + public-site capabilities; enumerates routes from content_model collections (excludes media/authors); depends on draft-publish
 
-Focused validations already done:
-- `282 passed in 21.86s` after earlier CLI/prepare fixes
-- `tests/unit/test_scaffold_engine.py` -> 52 passed
-- `tests/unit/test_spec_loader.py tests/unit/test_new_project_inputs.py tests/unit/test_spec_contract.py` -> 7 passed
-- real generated `taskflow` project passed `npm test`, `npm run lint`, `npm run build`
-- real `.venv/bin/python -m initializer new --spec <yaml>` now succeeds
+New test files:
+- tests/unit/test_cms_capability.py (6 tests)
+- tests/unit/test_public_site_capability.py (5 tests)
+- tests/unit/test_story_engine.py (9 new tests appended)
 
-Your task now:
-1. Continue from the current working tree without reverting unrelated changes.
-2. Run the full editorial validation flow from the repo root:
-   - `.venv/bin/python -m initializer new --spec examples/next-payload-postgres.input.yaml`
-   - `.venv/bin/python -m initializer prepare output/editorial-control-center`
-   - `cd output/editorial-control-center`
-   - `./ralph.sh --dry-run`
-   - `npm install`
-   - `docker compose up -d`
-   - `npm test`
-   - `npm run lint`
-   - `npm run build`
-   - `npm run dev`
-3. Verify the generated app works at `/` and `/admin`.
-4. If any step fails, stop at the first real failure, diagnose the root cause in the generator, fix it in the repo, add regression coverage, and rerun the relevant validation.
-5. Keep `analysis.md` updated with any new findings/fixes.
-6. Before finishing, report the exact git status and clearly separate intentional changes from unrelated files.
+Your tasks:
+1. Stage and commit all Session 6 changes (cms.py, public_site.py, story_engine.py, test files, analysis.md)
+2. Regenerate editorial-control-center: `python -m initializer new --spec examples/next-payload-postgres.input.yaml --output output/editorial-control-center --force`
+3. Run `python -m initializer prepare output/editorial-control-center`
+4. Validate: cd into the generated project and run npm install, npm test, npm run lint, npm run build
+5. Verify the new stories appear in the generated spec.json (search for "public-site-rendering", "static-delivery", collection names in content model story)
+6. If validation passes, update analysis.md with Session 6 validation results
 
-Do not restart from scratch. Build directly on the current changes and use the handoff notes in analysis.md as the source of truth.
+Do not restart from scratch. Build directly on the current state.
 ```

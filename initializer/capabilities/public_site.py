@@ -67,31 +67,35 @@ def apply_public_site(spec, architecture, stories):
 
     # Check if story already exists
     for story in stories:
-        if story.get("title") == "Configure CDN":
+        title = story.get("title", "")
+        if title in ("Configure CDN", "Configure static asset delivery"):
             return architecture, stories
 
     stories.append(
         {
             "id": f"ST-{len(stories)+1:03}",
-            "title": "Configure CDN",
-            "description": "Configure CDN for public site asset delivery.",
+            "title": "Configure static asset delivery",
+            "story_key": "infra.static-delivery",
+            "description": "Configure Next.js static asset optimization, cache headers, and Image component for public site delivery.",
             "acceptance_criteria": [
-                "Public assets are served through a CDN or edge cache",
-                "Cache headers are configured for static assets",
+                "next.config.ts configures image domains/remotePatterns for external images if applicable",
+                "Static assets (JS, CSS, fonts) have appropriate Cache-Control headers via Next.js output config",
+                "Next.js Image component is used for optimized image delivery in at least one component",
                 "Public routes are accessible without authentication",
-                "CDN configuration does not break authenticated admin routes",
+                "Admin routes remain unaffected by caching configuration",
             ],
             "scope_boundaries": [
+                "Do NOT implement an external CDN provider (Cloudflare, CloudFront, etc.) — use Next.js built-in optimization only",
                 "Do NOT implement the full public site layout — only the delivery infrastructure",
-                "Do NOT implement SEO optimizations in this story",
+                "Do NOT implement SEO meta tags in this story",
             ],
             "expected_files": [
-                "next.config.ts (updated with caching/CDN headers if applicable)",
+                "next.config.ts (updated with images and headers config)",
             ],
             "depends_on": ["bootstrap.frontend"],
             "validation": {
                 "commands": ["npm run build"],
-                "manual_check": "Public route loads and static assets have appropriate cache headers",
+                "manual_check": "Static assets have cache headers; Next.js Image component renders optimized images",
             },
         }
     )

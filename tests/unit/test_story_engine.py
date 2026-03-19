@@ -411,3 +411,199 @@ def test_bootstrap_repo_requires_test_framework():
     criteria = " ".join(repo["acceptance_criteria"])
     assert "vitest" in criteria.lower() or "jest" in criteria.lower()
     assert "npm test" in " ".join(repo["validation"]["commands"])
+
+
+# -------------------------------------------------------
+# FIX-1: Roles from spec appear in stories
+# -------------------------------------------------------
+
+
+def test_roles_story_uses_spec_role_names():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "roles"],
+        "stories": [],
+        "answers": {
+            "guided_answers": {
+                "roles_and_access": {
+                    "admin_roles": [
+                        {"name": "admin", "responsibility": "Manage everything"},
+                        {"name": "editor", "responsibility": "Draft content"},
+                        {"name": "reviewer", "responsibility": "Approve content"},
+                    ]
+                }
+            }
+        },
+    }
+    stories = generate_stories(spec)
+    roles_story = next(s for s in stories if s.get("story_key") == "feature.roles")
+    criteria = " ".join(roles_story["acceptance_criteria"])
+    assert "admin" in criteria
+    assert "editor" in criteria
+    assert "reviewer" in criteria
+
+
+def test_roles_story_falls_back_to_defaults():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "roles"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    roles_story = next(s for s in stories if s.get("story_key") == "feature.roles")
+    criteria = " ".join(roles_story["acceptance_criteria"])
+    assert "admin" in criteria
+    assert "user" in criteria
+
+
+# -------------------------------------------------------
+# FIX-2: Draft-publish uses spec roles
+# -------------------------------------------------------
+
+
+def test_draft_publish_uses_spec_roles():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "roles", "draft-publish"],
+        "stories": [],
+        "answers": {
+            "guided_answers": {
+                "roles_and_access": {
+                    "admin_roles": [
+                        {"name": "admin"},
+                        {"name": "editor"},
+                        {"name": "reviewer"},
+                    ]
+                }
+            }
+        },
+    }
+    stories = generate_stories(spec)
+    dp = next(s for s in stories if s.get("story_key") == "feature.draft-publish")
+    criteria = " ".join(dp["acceptance_criteria"])
+    assert "editor" in criteria or "reviewer" in criteria
+
+
+# -------------------------------------------------------
+# FIX-3: Media library uses storage backend from spec
+# -------------------------------------------------------
+
+
+def test_media_library_local_storage():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "media-library"],
+        "stories": [],
+        "answers": {
+            "guided_answers": {
+                "storage_requirements": {
+                    "upload_backend": "local_filesystem",
+                }
+            }
+        },
+    }
+    stories = generate_stories(spec)
+    media = next(s for s in stories if s.get("story_key") == "feature.media-library")
+    criteria = " ".join(media["acceptance_criteria"])
+    boundaries = " ".join(media["scope_boundaries"])
+    assert "local" in criteria.lower()
+    assert "S3" in boundaries
+
+
+def test_media_library_s3_storage():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "media-library"],
+        "stories": [],
+        "answers": {
+            "guided_answers": {
+                "storage_requirements": {
+                    "upload_backend": "s3",
+                }
+            }
+        },
+    }
+    stories = generate_stories(spec)
+    media = next(s for s in stories if s.get("story_key") == "feature.media-library")
+    criteria = " ".join(media["acceptance_criteria"])
+    assert "S3" in criteria
+
+
+# -------------------------------------------------------
+# FIX-4: Scheduled publishing mentions node-cron
+# -------------------------------------------------------
+
+
+def test_scheduled_publishing_mentions_node_cron():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "draft-publish", "scheduled-publishing"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    sched = next(s for s in stories if s.get("story_key") == "feature.scheduled-publishing")
+    criteria = " ".join(sched["acceptance_criteria"])
+    assert "node-cron" in criteria
+    assert "idempotent" in criteria
+
+
+# -------------------------------------------------------
+# FIX-5: Public site rendering story
+# -------------------------------------------------------
+
+
+def test_public_site_rendering_story_generated():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "draft-publish"],
+        "capabilities": ["cms", "public-site"],
+        "stories": [],
+        "answers": {
+            "guided_answers": {
+                "content_model": {
+                    "collections": [
+                        {"name": "pages", "purpose": "Landing pages"},
+                        {"name": "posts", "purpose": "News articles"},
+                        {"name": "media", "purpose": "Uploaded files"},
+                    ]
+                }
+            }
+        },
+    }
+    stories = generate_stories(spec)
+    public = next(s for s in stories if s.get("story_key") == "product.public-site-rendering")
+    assert public is not None
+    criteria = " ".join(public["acceptance_criteria"])
+    # media should be excluded from public routes
+    assert "/pages/" in criteria
+    assert "/posts/" in criteria
+    assert "/media/" not in criteria
+    assert "SSR" in criteria or "ISR" in criteria
+    assert "draft" in criteria.lower()
+
+
+def test_public_site_rendering_defaults_without_content_model():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "draft-publish"],
+        "capabilities": ["cms", "public-site"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    public = next(s for s in stories if s.get("story_key") == "product.public-site-rendering")
+    criteria = " ".join(public["acceptance_criteria"])
+    # defaults to posts and pages
+    assert "/posts/" in criteria
+    assert "/pages/" in criteria
+
+
+def test_no_public_site_rendering_without_capability():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "draft-publish"],
+        "capabilities": ["cms"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    keys = [s.get("story_key") for s in stories]
+    assert "product.public-site-rendering" not in keys
