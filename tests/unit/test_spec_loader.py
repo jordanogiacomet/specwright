@@ -89,6 +89,41 @@ def test_load_project_spec_reads_yaml_playbook_input(tmp_path):
     assert "public-site" in spec["capabilities"]
     assert "scheduled-jobs" not in spec["capabilities"]
     assert "i18n" not in spec["capabilities"]
+    assert "scheduled-publishing" not in spec["features"]
+
+
+def test_load_project_spec_respects_disabled_editorial_workflows(tmp_path):
+    spec_path = tmp_path / "editorial-flags.input.yaml"
+    spec_path.write_text(
+        dedent(
+            """
+            playbook_id: next-payload-postgres
+
+            guided_answers:
+              project_identity:
+                name: Editorial Control Center
+                slug: editorial-control-center
+                summary: Internal editorial control center for content and newsroom operations.
+              editorial_workflows:
+                draft_publish: false
+                preview: false
+                scheduled_publishing: false
+
+            critical_confirmations:
+              preview_workflow: false
+              draft_publish_workflow: false
+              background_jobs: false
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    spec = load_project_spec(str(spec_path))
+
+    assert "draft-publish" not in spec["features"]
+    assert "preview" not in spec["features"]
+    assert "scheduled-publishing" not in spec["features"]
 
 
 def test_load_project_spec_resolves_spec_yaml_from_directory(tmp_path):

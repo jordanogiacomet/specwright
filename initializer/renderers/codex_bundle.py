@@ -17,6 +17,8 @@ import stat
 from pathlib import Path
 from typing import Any
 
+from initializer.engine.validation_contract import migration_commands
+
 
 def _get_decision_signals(spec: dict[str, Any]) -> dict[str, Any]:
     discovery = spec.get("discovery", {})
@@ -33,26 +35,7 @@ def _detect_migration_commands(spec: dict[str, Any]) -> dict[str, str]:
 
     Returns a dict with keys: run, create, status.
     """
-    backend = (spec.get("stack", {}).get("backend") or "").lower().strip()
-
-    if backend in ("payload", "payload-cms"):
-        return {
-            "run": "npx payload migrate",
-            "create": "npx payload migrate:create",
-            "status": "npx payload migrate:status",
-        }
-    elif backend == "django":
-        return {
-            "run": "python manage.py migrate",
-            "create": "python manage.py makemigrations",
-            "status": "python manage.py showmigrations",
-        }
-    else:
-        return {
-            "run": "npm run db:migrate",
-            "create": "npm run db:migrate:create",
-            "status": "npm run db:migrate:status",
-        }
+    return migration_commands(spec)
 
 
 def _detect_migration_command(spec: dict[str, Any]) -> str:
@@ -425,9 +408,9 @@ run_migrations() {{
     # Only run if the migration command is available
     # For payload: check if payload is installed
     # For npm scripts: check if the script exists in package.json
-    if [[ "$MIGRATION_CMD" == "npx payload migrate" ]]; then
+    if [[ "$MIGRATION_CMD" == "./node_modules/.bin/payload --disable-transpile migrate" ]] || [[ "$MIGRATION_CMD" == "payload --disable-transpile migrate" ]]; then
         # Check if payload is installed
-        if [[ ! -f "$SCRIPT_DIR/node_modules/.package-lock.json" ]] && ! npx payload --help &>/dev/null; then
+        if [[ ! -x "$SCRIPT_DIR/node_modules/.bin/payload" ]]; then
             return 0
         fi
         # Check if payload config exists (means backend is set up)
@@ -487,16 +470,22 @@ run_codex() {{
     }}
     trap _cleanup RETURN
 
-    # Build prompt file
-    cat > "$prompt_file" <<PROMPT_EOF
-# Task: Implement $story_id — $story_title
-
+    # Build prompt file without evaluating story markdown in the shell
+    {{
+        printf '# Task: Implement %s — %s\\n\\n' "$story_id" "$story_title"
+        cat <<'PROMPT_EOF'
 You are implementing a single story for the project **{project_name}**.
 
 ## Story
 
-$(if [[ -f "$STORIES_DIR/$story_id.md" ]]; then cat "$STORIES_DIR/$story_id.md"; else echo "Implement: $story_title"; fi)
-
+PROMPT_EOF
+        if [[ -f "$STORIES_DIR/$story_id.md" ]]; then
+            cat "$STORIES_DIR/$story_id.md"
+        else
+            printf 'Implement: %s\\n' "$story_title"
+        fi
+        printf '\\n\\n'
+        cat <<'PROMPT_EOF'
 ## Instructions
 
 - Read .codex/AGENTS.md for project context and scope boundaries
@@ -509,14 +498,15 @@ $(if [[ -f "$STORIES_DIR/$story_id.md" ]]; then cat "$STORIES_DIR/$story_id.md";
 
 ## CRITICAL: Database Migrations
 
-If this story adds, removes, or modifies any collection fields, database models, 
+If this story adds, removes, or modifies any collection fields, database models,
 or schema (including adding localization to fields), you MUST:
 
-1. Make the schema change
-2. Generate a migration: `$MIGRATION_CREATE`
-3. Run the migration: `$MIGRATION_CMD`
-4. Verify with: `$MIGRATION_STATUS`
-
+PROMPT_EOF
+        printf '1. Make the schema change\\n'
+        printf '2. Generate a migration: `%s`\\n' "$MIGRATION_CREATE"
+        printf '3. Run the migration: `%s`\\n' "$MIGRATION_CMD"
+        printf '4. Verify with: `%s`\\n\\n' "$MIGRATION_STATUS"
+        cat <<'PROMPT_EOF'
 Skipping this will cause runtime errors like "relation does not exist".
 
 ## Validation
@@ -524,6 +514,7 @@ Skipping this will cause runtime errors like "relation does not exist".
 After implementation, run available validation commands (test, lint, build).
 If no commands exist yet, note that in your response.
 PROMPT_EOF
+    }} > "$prompt_file"
 
     # Run Codex via installed CLI
     codex exec \\
@@ -574,20 +565,19 @@ run_codex_retry() {{
     }}
     trap _cleanup RETURN
 
-    # Build retry prompt with error context
-    cat > "$prompt_file" <<PROMPT_EOF
-# RETRY: Fix $story_id — $story_title
-
+    # Build retry prompt without evaluating error text or story markdown in the shell
+    {{
+        printf '# RETRY: Fix %s — %s\\n\\n' "$story_id" "$story_title"
+        cat <<'PROMPT_EOF'
 You are RETRYING a story that failed on the previous attempt for the project **{project_name}**.
 
 ## Previous Error
 
 The previous attempt failed with:
 
-\\`\\`\\`
-$previous_error
-\\`\\`\\`
-
+PROMPT_EOF
+        printf '```\\n%s\\n```\\n\\n' "$previous_error"
+        cat <<'PROMPT_EOF'
 ## What to do
 
 1. Read the error above carefully
@@ -597,18 +587,26 @@ $previous_error
 
 ## Story
 
-$(if [[ -f "$STORIES_DIR/$story_id.md" ]]; then cat "$STORIES_DIR/$story_id.md"; else echo "Implement: $story_title"; fi)
-
+PROMPT_EOF
+        if [[ -f "$STORIES_DIR/$story_id.md" ]]; then
+            cat "$STORIES_DIR/$story_id.md"
+        else
+            printf 'Implement: %s\\n' "$story_title"
+        fi
+        printf '\\n\\n'
+        cat <<'PROMPT_EOF'
 ## CRITICAL: Database Migrations
 
 If the error is about missing tables or columns ("relation does not exist"):
-1. Generate a migration: `$MIGRATION_CREATE`
-2. Run the migration: `$MIGRATION_CMD`
-
+PROMPT_EOF
+        printf '1. Generate a migration: `%s`\\n' "$MIGRATION_CREATE"
+        printf '2. Run the migration: `%s`\\n\\n' "$MIGRATION_CMD"
+        cat <<'PROMPT_EOF'
 ## Validation
 
 After fixing, run: test, lint, build.
 PROMPT_EOF
+    }} > "$prompt_file"
 
     # Run Codex via installed CLI
     codex exec \\

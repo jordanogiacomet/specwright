@@ -754,6 +754,91 @@ def _safe_choice(value: Any, options: list[str], default: str) -> str:
     return default
 
 
+def _lookup_nested(data: dict[str, Any], path: tuple[str, ...]) -> Any:
+    current: Any = data
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current
+
+
+def _coerce_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "y", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "n", "off"}:
+            return False
+
+    return None
+
+
+def _normalize_feature_list(features: Any) -> list[str]:
+    normalized: list[str] = []
+    for feature in features or []:
+        if not isinstance(feature, str):
+            continue
+        text = feature.strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    return normalized
+
+
+def _apply_feature_answer_overrides(
+    features: list[str],
+    answers: dict[str, Any],
+) -> list[str]:
+    """Respect explicit editorial workflow booleans from structured answers.
+
+    Archetypes can provide sensible defaults, but when the playbook/user marks a
+    workflow as disabled we should not keep the corresponding story in the queue.
+    """
+    resolved = list(features)
+    feature_flags = {
+        "draft-publish": [
+            ("draft_publish",),
+            ("editorial_workflows", "draft_publish"),
+            ("guided_answers", "editorial_workflows", "draft_publish"),
+            ("critical_confirmations", "draft_publish_workflow"),
+            ("guided_answers", "critical_confirmations", "draft_publish_workflow"),
+        ],
+        "preview": [
+            ("preview",),
+            ("editorial_workflows", "preview"),
+            ("guided_answers", "editorial_workflows", "preview"),
+            ("critical_confirmations", "preview_workflow"),
+            ("guided_answers", "critical_confirmations", "preview_workflow"),
+        ],
+        "scheduled-publishing": [
+            ("scheduled_publishing",),
+            ("editorial_workflows", "scheduled_publishing"),
+            ("guided_answers", "editorial_workflows", "scheduled_publishing"),
+            ("background_jobs",),
+            ("critical_confirmations", "background_jobs"),
+            ("guided_answers", "critical_confirmations", "background_jobs"),
+        ],
+    }
+
+    for feature, paths in feature_flags.items():
+        flag = None
+        for path in paths:
+            bool_value = _coerce_bool(_lookup_nested(answers, path))
+            if bool_value is not None:
+                flag = bool_value
+                break
+
+        if flag is True and feature not in resolved:
+            resolved.append(feature)
+        elif flag is False:
+            resolved = [item for item in resolved if item != feature]
+
+    return resolved
+
+
 def _resolve_spec_input_path(spec_path: str) -> Path:
     candidate = Path(spec_path).expanduser()
     if candidate.is_dir():
@@ -936,6 +1021,8 @@ def load_project_spec(spec_path: str) -> dict[str, Any]:
     features = data.get("features")
     if not isinstance(features, list):
         features = list(archetype_data.get("features") or [])
+    features = _normalize_feature_list(features)
+    features = _apply_feature_answer_overrides(features, normalized_answers)
 
     capabilities = data.get("capabilities")
     if not isinstance(capabilities, list):

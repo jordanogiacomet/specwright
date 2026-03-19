@@ -266,7 +266,10 @@ def _package_json(spec: dict[str, Any]) -> str:
         # Pin Next.js to range compatible with Payload 3
         pkg["dependencies"]["next"] = "15.4.11"
         pkg["devDependencies"]["eslint-config-next"] = "15.4.11"
-        pkg["scripts"]["generate:types"] = "payload generate:types"
+        pkg["scripts"]["generate:types"] = "payload --disable-transpile generate:types"
+        pkg["scripts"]["db:migrate"] = "payload --disable-transpile migrate"
+        pkg["scripts"]["db:migrate:create"] = "payload --disable-transpile migrate:create"
+        pkg["scripts"]["db:migrate:status"] = "payload --disable-transpile migrate:status"
         pkg["dependencies"]["@payloadcms/next"] = "^3"
         pkg["dependencies"]["@payloadcms/richtext-lexical"] = "^3"
         pkg["dependencies"]["@payloadcms/db-postgres"] = "^3"
@@ -405,6 +408,7 @@ export default buildConfig({{
     outputFile: path.resolve(dirname, "payload-types.ts"),
   }},
   db: postgresAdapter({{
+    migrationDir: path.resolve(dirname, "lib/migrations"),
     pool: {{
       connectionString: process.env.DATABASE_URI || "",
     }},
@@ -510,6 +514,10 @@ def _vitest_config() -> str:
     return """import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  esbuild: {
+    jsx: "automatic",
+    jsxImportSource: "react",
+  },
   test: {
     environment: "node",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],

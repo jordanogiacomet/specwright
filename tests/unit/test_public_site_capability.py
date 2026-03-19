@@ -46,6 +46,16 @@ def test_static_delivery_mentions_next_image():
     story = next(s for s in stories if s["title"] == "Configure static asset delivery")
     criteria = " ".join(story["acceptance_criteria"])
     assert "Image" in criteria
+    assert "does not require creating public routes" in criteria
+
+
+def test_static_delivery_expected_files_include_public_image_component():
+    spec = _make_spec(needs_public_site=True)
+    arch = {"decisions": [], "components": []}
+    _, stories = apply_public_site(spec, arch, [])
+    story = next(s for s in stories if s["title"] == "Configure static asset delivery")
+    files = story["expected_files"]
+    assert any("PublicImage" in file for file in files)
 
 
 def test_old_cdn_title_deduplication():

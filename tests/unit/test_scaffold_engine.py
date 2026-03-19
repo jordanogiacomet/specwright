@@ -157,6 +157,18 @@ def test_payload_package_json_has_payload_deps(tmp_path):
     assert "sharp" in pkg["dependencies"]
 
 
+def test_payload_package_json_has_disable_transpile_scripts(tmp_path):
+    write_scaffold(tmp_path, _payload_spec())
+
+    pkg = json.loads((tmp_path / "package.json").read_text())
+    scripts = pkg["scripts"]
+
+    assert scripts["generate:types"] == "payload --disable-transpile generate:types"
+    assert scripts["db:migrate"] == "payload --disable-transpile migrate"
+    assert scripts["db:migrate:create"] == "payload --disable-transpile migrate:create"
+    assert scripts["db:migrate:status"] == "payload --disable-transpile migrate:status"
+
+
 def test_payload_package_json_pins_next_version(tmp_path):
     write_scaffold(tmp_path, _payload_spec())
 
@@ -225,6 +237,7 @@ def test_payload_config_references_database_uri(tmp_path):
     assert "DATABASE_URI" in content
     assert "PAYLOAD_SECRET" in content
     assert "postgresAdapter" in content
+    assert 'migrationDir: path.resolve(dirname, "lib/migrations")' in content
 
 
 def test_payload_config_imports_users_with_runtime_safe_extension(tmp_path):
@@ -487,6 +500,8 @@ def test_vitest_config_targets_generated_smoke_tests(tmp_path):
     content = (tmp_path / "vitest.config.ts").read_text()
 
     assert 'defineConfig' in content
+    assert 'jsx: "automatic"' in content
+    assert 'jsxImportSource: "react"' in content
     assert 'environment: "node"' in content
     assert 'src/**/*.test.ts' in content
     assert 'passWithNoTests: false' in content

@@ -9,6 +9,7 @@ from typing import Any
 CAPABILITY_COVERAGE_RULES = {
     "cms": {
         "story_keys": {
+            "product.cms-content-model",
             "feature.media-library",
             "feature.preview",
             "feature.scheduled-publishing",
@@ -36,6 +37,8 @@ CAPABILITY_COVERAGE_RULES = {
     "public-site": {
         "story_keys": {
             "product.public-site",
+            "product.public-site-rendering",
+            "infra.static-delivery",
         },
         "title_keywords": {
             "configure cdn",
@@ -78,6 +81,11 @@ CAPABILITY_COVERAGE_RULES = {
     "i18n": {
         "story_keys": {
             "product.i18n",
+            "feature.i18n-setup",
+            "feature.cms-localization",
+            "feature.locale-routing",
+            "feature.localized-ui",
+            "feature.locale-selection",
         },
         "title_keywords": {
             "add application locale support",

@@ -16,7 +16,12 @@ Key improvements in this version:
 - Draft-publish story when feature is present
 """
 
-from initializer.engine.validation_contract import build_validation_bundle, detect_ecosystem, expected_test_runner
+from initializer.engine.validation_contract import (
+    build_validation_bundle,
+    detect_ecosystem,
+    expected_test_runner,
+    migration_commands,
+)
 
 
 def _merge_story(existing_story, generated_story):
@@ -91,33 +96,202 @@ def _normalize_core_work_features(value):
     return normalized
 
 
-def _get_role_names(spec):
-    """Extract role names from guided_answers.roles_and_access.admin_roles.
-
-    Returns a list of role name strings (e.g. ["admin", "editor", "reviewer"]),
-    or a default fallback if not defined in the spec.
-    """
+def _guided_answers(spec):
     answers = spec.get("answers", {})
     ga = answers.get("guided_answers", {})
-    roles_section = ga.get("roles_and_access", {})
-    admin_roles = roles_section.get("admin_roles", [])
+    return ga if isinstance(ga, dict) else {}
 
-    names = []
-    for role in admin_roles:
-        if isinstance(role, dict) and role.get("name"):
-            names.append(role["name"])
-        elif isinstance(role, str) and role.strip():
-            names.append(role.strip())
 
-    return names or ["admin", "user"]
+def _get_content_model(spec):
+    content_model = _guided_answers(spec).get("content_model", {})
+    return content_model if isinstance(content_model, dict) else {}
+
+
+def _get_content_collections(spec):
+    collections = _get_content_model(spec).get("collections", [])
+    return collections if isinstance(collections, list) else []
+
+
+def _get_content_globals(spec):
+    globals_list = _get_content_model(spec).get("globals", [])
+    return globals_list if isinstance(globals_list, list) else []
+
+
+def _get_media_kinds(spec):
+    media_items = _get_content_model(spec).get("media", [])
+    if not isinstance(media_items, list):
+        return []
+
+    kinds = []
+    for item in media_items:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("kind", "")
+        if isinstance(kind, str):
+            text = kind.strip().lower()
+            if text and text not in kinds:
+                kinds.append(text)
+    return kinds
+
+
+def _is_enabled(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "y", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "n", "off"}:
+            return False
+    return bool(value)
+
+
+def _is_editorial_context(spec):
+    signals = _get_decision_signals(spec)
+    capabilities = spec.get("capabilities", [])
+    features = spec.get("features", [])
+    archetype = spec.get("archetype", "")
+    app_shape = signals.get("app_shape")
+    return (
+        archetype == "editorial-cms"
+        or app_shape == "content-platform"
+        or "cms" in capabilities
+        or "draft-publish" in features
+        or "preview" in features
+    )
+
+
+def _get_role_definitions(spec):
+    roles = []
+
+    roles_section = _guided_answers(spec).get("roles_and_access", {})
+    if isinstance(roles_section, dict):
+        admin_roles = roles_section.get("admin_roles", [])
+        if isinstance(admin_roles, list):
+            roles = admin_roles
+
+    if not roles:
+        domain_model = spec.get("domain_model", {})
+        if isinstance(domain_model, dict):
+            domain_roles = domain_model.get("roles", [])
+            if isinstance(domain_roles, list):
+                roles = domain_roles
+
+    normalized = []
+    seen = set()
+    for role in roles:
+        if isinstance(role, dict):
+            name = role.get("name")
+            if isinstance(name, str):
+                text = name.strip().lower()
+                if text and text not in seen:
+                    normalized.append({"name": text, "responsibility": role.get("responsibility", "")})
+                    seen.add(text)
+        elif isinstance(role, str):
+            text = role.strip().lower()
+            if text and text not in seen:
+                normalized.append({"name": text, "responsibility": ""})
+                seen.add(text)
+
+    if normalized:
+        return normalized
+
+    if _is_editorial_context(spec):
+        return [
+            {"name": "admin", "responsibility": "manage users, configuration, and publishing overrides"},
+            {"name": "editor", "responsibility": "create and edit drafts, then submit for review"},
+            {"name": "reviewer", "responsibility": "review submissions and approve publication"},
+        ]
+
+    return [
+        {"name": "admin", "responsibility": "manage privileged actions"},
+        {"name": "user", "responsibility": "use the main application features"},
+    ]
+
+
+def _get_role_names(spec):
+    return [role["name"] for role in _get_role_definitions(spec)]
 
 
 def _get_storage_backend(spec):
     """Extract storage backend preference from guided_answers.storage_requirements."""
-    answers = spec.get("answers", {})
-    ga = answers.get("guided_answers", {})
-    storage = ga.get("storage_requirements", {})
+    storage = _guided_answers(spec).get("storage_requirements", {})
     return storage.get("upload_backend", "").lower().strip()
+
+
+def _get_editorial_workflows(spec):
+    workflows = _guided_answers(spec).get("editorial_workflows", {})
+    return workflows if isinstance(workflows, dict) else {}
+
+
+def _lookup_answer_path(spec, path):
+    current = spec.get("answers", {})
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current
+
+
+def _feature_enabled_by_answers(spec, feature):
+    feature_flags = {
+        "draft-publish": [
+            ("guided_answers", "editorial_workflows", "draft_publish"),
+            ("critical_confirmations", "draft_publish_workflow"),
+        ],
+        "preview": [
+            ("guided_answers", "editorial_workflows", "preview"),
+            ("critical_confirmations", "preview_workflow"),
+        ],
+        "scheduled-publishing": [
+            ("guided_answers", "editorial_workflows", "scheduled_publishing"),
+            ("critical_confirmations", "background_jobs"),
+        ],
+    }
+
+    for path in feature_flags.get(feature, []):
+        bool_value = _is_enabled(_lookup_answer_path(spec, path))
+        raw_value = _lookup_answer_path(spec, path)
+        if raw_value is not None:
+            return bool_value
+
+    return feature in spec.get("features", [])
+
+
+def _supports_public_collection(name):
+    return name not in {"media", "authors", "users", "categories", "tags"}
+
+
+def _public_collection_names(spec):
+    names = []
+    for collection in _get_content_collections(spec):
+        if not isinstance(collection, dict):
+            continue
+        name = collection.get("name", "")
+        if not isinstance(name, str):
+            continue
+        text = name.strip().lower()
+        if text and _supports_public_collection(text) and text not in names:
+            names.append(text)
+    return names or ["posts", "pages"]
+
+
+def _pascal_case(value):
+    return "".join(part.capitalize() for part in value.replace("_", "-").split("-") if part)
+
+
+def _collection_file_path(stack, name):
+    backend = stack.get("backend", "node-api")
+    if backend in ("payload", "payload-cms"):
+        return f"src/collections/{_pascal_case(name)}.ts"
+    return f"src/models/{_pascal_case(name)}.ts"
+
+
+def _global_file_path(stack, name):
+    backend = stack.get("backend", "node-api")
+    if backend in ("payload", "payload-cms"):
+        return f"src/globals/{_pascal_case(name)}.ts"
+    return f"src/config/{_pascal_case(name)}.ts"
 
 
 # ---------------------------------------------------------------------------
@@ -156,11 +330,6 @@ _DEFAULT_VALIDATION = {
     "commands": ["npm run build", "npm run lint"],
     "manual_check": None,
 }
-
-_MIGRATION_CRITERIA = "Database migration is generated and executed for all schema changes (run migrate:create then migrate)"
-
-_MIGRATION_DIR_BOUNDARY = "All migrations MUST be created in `src/lib/migrations/` using `npm run db:migrate:create` — do NOT create migration files in any other directory (e.g. `src/models/migrations/`)"
-
 
 def _validation(commands=None, manual_check=None):
     return {
@@ -203,6 +372,26 @@ def generate_stories(spec):
     validation_commands = validation_bundle.get("commands", {})
     ecosystem = detect_ecosystem(stack)
     runner_label = expected_test_runner(spec)
+    migration_cmds = migration_commands(spec)
+    migration_create_cmd = migration_cmds["create"]
+    migration_run_cmd = migration_cmds["run"]
+    migration_status_cmd = migration_cmds["status"]
+
+    migration_criteria = (
+        f"Database migration is generated and executed for all schema changes "
+        f"(run `{migration_create_cmd}` then `{migration_run_cmd}`)"
+    )
+
+    if (stack.get("backend") or "").lower().strip() in ("payload", "payload-cms", "node-api"):
+        migration_dir_boundary = (
+            f"All migrations MUST be created in `src/lib/migrations/` using `{migration_create_cmd}` "
+            f"— do NOT create migration files in any other directory (e.g. `src/models/migrations/`)"
+        )
+    else:
+        migration_dir_boundary = (
+            f"Use the stack's canonical migration commands (`{migration_create_cmd}` / `{migration_run_cmd}` / "
+            f"`{migration_status_cmd}`) and do NOT invent a parallel migration workflow."
+        )
 
     bootstrap_validation_commands = []
     install_cmd = validation_bundle.get("setup", {}).get("install")
@@ -401,13 +590,13 @@ def generate_stories(spec):
                 "Initial migration or schema setup runs without errors",
                 "Connection can be verified programmatically",
                 "docker-compose.yml includes database service" if database == "postgres" else f"{database} setup is documented",
-                _MIGRATION_CRITERIA,
+                migration_criteria,
             ],
             scope_boundaries=[
                 "Do NOT create application tables yet — only the connection layer",
                 "Do NOT add seed data",
                 "Do NOT implement any API endpoints",
-                _MIGRATION_DIR_BOUNDARY,
+                migration_dir_boundary,
             ],
             expected_files=[
                 "docker-compose.yml" if database == "postgres" else f"docs/database-setup.md",
@@ -517,7 +706,7 @@ def generate_stories(spec):
         else:
             auth_files.append("src/api/auth.ts")
 
-        auth_ac.append(_MIGRATION_CRITERIA)
+        auth_ac.append(migration_criteria)
         auth_files.append(_frontend_page_path(stack, "(auth)/login"))
 
         upsert_story(
@@ -529,7 +718,7 @@ def generate_stories(spec):
                 "Do NOT implement OAuth or social login in this story",
                 "Do NOT implement password reset or email verification",
                 "Do NOT implement MFA",
-                _MIGRATION_DIR_BOUNDARY,
+                migration_dir_boundary,
             ],
             expected_files=auth_files,
             depends_on=["bootstrap.backend", "bootstrap.frontend"],
@@ -542,17 +731,37 @@ def generate_stories(spec):
     if "roles" in features:
         role_names = _get_role_names(spec)
         role_list_str = ", ".join(role_names)
-        roles_ac = [
-            f"Role model is defined with the following roles: {role_list_str}",
-            "Permissions are enforced on protected endpoints",
-            "Admin users can manage other users' roles",
-            "Unauthorized role access returns 403",
-            _MIGRATION_CRITERIA,
-        ]
+        role_name_set = set(role_names)
+        editorial_roles = {"admin", "editor", "reviewer"}.issubset(role_name_set)
+
+        if editorial_roles:
+            roles_ac = [
+                f"Role model is defined with the following roles: {role_list_str}",
+                "`editor` can create and update drafts but cannot publish, manage users, or change system configuration",
+                "`reviewer` can review submissions and publish approved content but cannot manage users or global system configuration",
+                "`admin` can manage users, configuration, and override editorial publish/archive actions",
+                "Protected endpoints and admin collection/global access rules enforce the role matrix consistently",
+                "Unauthorized role access returns 403",
+                migration_criteria,
+            ]
+            roles_manual_check = "Editor can edit drafts but gets 403 on publish-only actions; reviewer can approve/publish; admin can manage users."
+        else:
+            roles_ac = [
+                f"Role model is defined with the following roles: {role_list_str}",
+                "Permissions are enforced on protected endpoints",
+                "Admin users can manage other users' roles",
+                "Unauthorized role access returns 403",
+                migration_criteria,
+            ]
+            roles_manual_check = "Admin can access admin routes; regular user gets 403"
+
         roles_files = [_lib_path("permissions")]
 
         if backend in ("payload", "payload-cms"):
-            roles_ac.append("Payload access control functions use role checks")
+            if editorial_roles:
+                roles_ac.append("Payload access control functions explicitly gate editorial collections/globals by admin/editor/reviewer responsibilities")
+            else:
+                roles_ac.append("Payload access control functions use role checks")
             roles_files.append(f"{_backend_path(stack, 'Users')} (updated with roles field)")
         else:
             roles_files.append("src/middleware/authorize.ts")
@@ -565,39 +774,57 @@ def generate_stories(spec):
             scope_boundaries=[
                 "Do NOT implement granular per-field permissions unless required by spec",
                 "Do NOT implement a permissions admin UI — enforce in backend only",
-                _MIGRATION_DIR_BOUNDARY,
+                migration_dir_boundary,
             ],
             expected_files=roles_files,
             depends_on=["feature.authentication"],
             validation=_validation(
                 commands=["npm run build", "npm test"],
-                manual_check="Admin can access admin routes; regular user gets 403",
+                manual_check=roles_manual_check,
             ),
         )
 
     if "media-library" in features:
         storage_backend = _get_storage_backend(spec)
         use_local = storage_backend in ("local_filesystem", "local_first", "local", "")
+        media_kinds = _get_media_kinds(spec)
+        media_depends = ["feature.authentication"]
+        if "cms" in capabilities:
+            media_depends.append("product.cms-content-model")
 
         media_ac = [
             "Users can upload images and files",
             "Uploaded media is stored and retrievable via URL",
             "Media list view shows uploaded assets with thumbnails",
             "File size and type validation is enforced on upload",
-            _MIGRATION_CRITERIA,
+            migration_criteria,
         ]
         media_files = []
         media_boundaries = [
             "Do NOT implement image optimization or CDN delivery in this story",
             "Do NOT implement media usage tracking across content",
-            _MIGRATION_DIR_BOUNDARY,
+            migration_dir_boundary,
         ]
+
+        if "cms" in capabilities:
+            media_boundaries.insert(
+                0,
+                "Do NOT redefine the CMS schema here — extend the existing `media` collection from the CMS content model story with upload/storage behavior only",
+            )
+
+        if media_kinds:
+            media_ac.append(
+                f"Upload validation explicitly supports the media kinds required by the spec: {', '.join(media_kinds)}"
+            )
 
         if backend in ("payload", "payload-cms"):
             if use_local:
                 media_ac.append(
                     "Payload Media collection uses the local filesystem upload adapter "
                     "(store uploads in a `media/` directory at the project root)"
+                )
+                media_ac.append(
+                    "The local filesystem path is treated as an adapter boundary so object storage can be introduced later without changing callers"
                 )
                 media_boundaries.append(
                     "Do NOT configure S3 or external object storage — use Payload's local disk adapter for now"
@@ -606,8 +833,13 @@ def generate_stories(spec):
                 media_ac.append(
                     "Payload Media collection is configured with S3-compatible upload adapter"
                 )
+                media_ac.append(
+                    "Storage environment variables are declared explicitly in `.env.example` (bucket, region, endpoint, access key, secret key)"
+                )
             media_ac.append("Payload Media collection is configured with upload settings")
             media_files.append(_backend_path(stack, "Media"))
+            media_files.append("src/payload.config.ts (updated with upload and storage settings)")
+            media_files.append(".env.example (updated with storage configuration)")
         else:
             if use_local:
                 media_ac.append(
@@ -620,8 +852,12 @@ def generate_stories(spec):
                 media_ac.append(
                     "Uploads are stored in S3-compatible object storage"
                 )
+                media_ac.append(
+                    "Storage environment variables are declared explicitly in `.env.example` (bucket, region, endpoint, access key, secret key)"
+                )
             media_files.append("src/api/media.ts")
             media_files.append(_lib_path("storage"))
+            media_files.append(".env.example (updated with storage configuration)")
 
         upsert_story(
             "feature.media-library",
@@ -630,30 +866,51 @@ def generate_stories(spec):
             acceptance_criteria=media_ac,
             scope_boundaries=media_boundaries,
             expected_files=media_files,
-            depends_on=["feature.authentication"],
+            depends_on=media_depends,
             validation=_validation(
                 commands=["npm run build", "npm test"],
-                manual_check="Can upload an image and see it in the media list",
+                manual_check="Can upload an image or document, retrieve its URL, and see validation reject disallowed file types.",
             ),
         )
 
-    if "draft-publish" in features:
+    if _feature_enabled_by_answers(spec, "draft-publish"):
         role_names = _get_role_names(spec)
-        publish_roles = [r for r in role_names if r in ("admin", "reviewer", "editor")]
+        if {"admin", "editor", "reviewer"}.issubset(set(role_names)):
+            publish_roles = [r for r in role_names if r in ("admin", "reviewer")]
+        else:
+            publish_roles = [r for r in role_names if r in ("admin", "reviewer", "editor")]
         if not publish_roles:
             publish_roles = ["admin"]
         publish_role_str = " or ".join(publish_roles)
+        public_collections = _public_collection_names(spec)
+        draft_depends = ["feature.roles"] if "roles" in features else ["feature.authentication"]
+        if "cms" in capabilities:
+            draft_depends.insert(0, "product.cms-content-model")
 
-        dp_ac = [
-            "Content items have a status field with at least draft and published states",
-            "Only authorized roles can transition content to published state",
-            "Published content is visible through the appropriate surface",
-            f"Draft content is only visible to {publish_role_str}",
-            _MIGRATION_CRITERIA,
-        ]
+        if "cms" in capabilities:
+            dp_ac = [
+                f"Collections intended for public rendering ({', '.join(public_collections)}) support editorial states `draft`, `in_review`, and `published`",
+                f"Editors can save drafts and reviewers/admins can transition content to published state ({publish_role_str})",
+                "A draft can be sent back from review for changes without creating duplicate entries",
+                "The query/filter layer used by future public rendering excludes draft entries unless preview/draft mode is explicitly active",
+                "Publishing records a canonical published timestamp or Payload published-state equivalent used by later public rendering",
+                migration_criteria,
+            ]
+        else:
+            dp_ac = [
+                "Content items have a status field with at least draft and published states",
+                "Only authorized roles can transition content to published state",
+                "Published content is visible through the appropriate surface",
+                f"Draft content is only visible to {publish_role_str}",
+                migration_criteria,
+            ]
 
         if "roles" in features:
             dp_ac.append(f"Publishing requires {publish_role_str} role")
+
+        dp_files = [_lib_path("content-status")]
+        if "cms" in capabilities:
+            dp_files.extend(_collection_file_path(stack, name) for name in public_collections)
 
         upsert_story(
             "feature.draft-publish",
@@ -664,55 +921,113 @@ def generate_stories(spec):
                 "Do NOT implement versioning or revision history",
                 "Do NOT implement scheduled publishing — that is a separate story",
                 "Do NOT implement approval notifications",
+                "Do NOT implement public page components in this story — only the workflow and publish visibility rules",
+                migration_dir_boundary,
             ],
-            expected_files=[
-                _lib_path("content-status"),
-            ],
-            depends_on=["feature.roles"] if "roles" in features else ["feature.authentication"],
+            expected_files=dp_files,
+            depends_on=draft_depends,
             validation=_validation(
                 commands=["npm run build", "npm test"],
-                manual_check="Can create draft, publish it, verify it appears on the appropriate surface",
+                manual_check="Can create a draft, submit/review it, publish it, and confirm only published entries are returned by the public-facing query/filter path.",
             ),
         )
 
-    if "preview" in features:
+    if _feature_enabled_by_answers(spec, "preview") and _feature_enabled_by_answers(spec, "draft-publish"):
+        preview_depends = ["feature.draft-publish"]
+        preview_files = [_lib_path("preview")]
+        preview_ac = [
+            "Draft content can be previewed through a unique preview URL or mode",
+            "Preview renders content as it would appear when published",
+            "Preview is only accessible to authenticated users with appropriate roles",
+            "Preview does not leak draft content to public or search engines",
+        ]
+        preview_boundaries = [
+            "Do NOT implement live editing or inline editing",
+            "Do NOT implement preview for multiple content types — start with the primary type",
+        ]
+        preview_manual_check = "Can preview draft content via preview URL while logged in"
+
+        if "cms" in capabilities and "public-site" in capabilities:
+            preview_collections = _public_collection_names(spec)
+            preview_depends.append("product.public-site-rendering")
+            preview_files = [
+                "src/app/api/preview/route.ts",
+                "src/app/api/exit-preview/route.ts",
+                _lib_path("preview"),
+            ]
+            preview_files.extend(
+                _frontend_page_path(stack, f"(public)/{name}/[slug]") for name in preview_collections
+            )
+            preview_ac = [
+                "A preview entry route/handler enables draft mode only for authenticated editorial roles",
+                f"Preview accepts collection + slug lookup for {', '.join(preview_collections)} and resolves draft content with the same loaders used by public pages",
+                "Preview mode can be exited explicitly and public routes immediately return to published-only behavior",
+                "Preview responses are marked no-store/noindex and do not leak draft content to anonymous users or search engines",
+            ]
+            preview_boundaries = [
+                "Do NOT implement live editing or inline editing",
+                "Do NOT create a separate second public site just for preview",
+                "Do NOT allow anonymous preview links in this story",
+            ]
+            preview_manual_check = "While logged in as an editorial role, enable preview for a draft page/post, verify it renders, then exit preview and confirm the public slug still hides the draft."
+
         upsert_story(
             "feature.preview",
             "Implement content preview",
             "Allow previewing unpublished content in the frontend.",
-            acceptance_criteria=[
-                "Draft content can be previewed through a unique preview URL or mode",
-                "Preview renders content as it would appear when published",
-                "Preview is only accessible to authenticated users with appropriate roles",
-                "Preview does not leak draft content to public or search engines",
-            ],
-            scope_boundaries=[
-                "Do NOT implement live editing or inline editing",
-                "Do NOT implement preview for multiple content types — start with the primary type",
-            ],
-            expected_files=[
-                _frontend_page_path(stack, "preview/[slug]"),
-                _lib_path("preview"),
-            ],
-            depends_on=["feature.draft-publish"],
+            acceptance_criteria=preview_ac,
+            scope_boundaries=preview_boundaries,
+            expected_files=preview_files,
+            depends_on=preview_depends,
             validation=_validation(
                 commands=["npm run build"],
-                manual_check="Can preview draft content via preview URL while logged in",
+                manual_check=preview_manual_check,
             ),
         )
 
-    if "scheduled-publishing" in features:
+    if _feature_enabled_by_answers(spec, "scheduled-publishing") and _feature_enabled_by_answers(spec, "draft-publish"):
+        sched_depends = ["feature.draft-publish"]
+        sched_files = [
+            _lib_path("scheduler"),
+            "src/jobs/publish-scheduled.ts",
+            ".env.example (updated with SCHEDULED_PUBLISH_CRON or equivalent scheduler interval)",
+        ]
         sched_ac = [
             "node-cron (or equivalent) is installed as a dependency",
-            "A cron job is registered that runs on a configurable interval (default: every minute)",
+            "A cron job is registered from application startup and runs on a configurable interval (default: every minute)",
             "Content items can have a publishAt date/time field",
             "The cron job queries for content where publishAt <= now AND status = 'scheduled', and transitions it to 'published'",
-            "Published content appears on the appropriate surface after the scheduled time",
             "Each publish attempt is logged with timestamp, content ID, and outcome",
             "Failed publish attempts are logged and retried on the next cron cycle",
             "The job is idempotent — running it twice does not double-publish",
-            _MIGRATION_CRITERIA,
+            migration_criteria,
         ]
+
+        if "cms" in capabilities:
+            public_collections = _public_collection_names(spec)
+            sched_depends.insert(0, "product.cms-content-model")
+            sched_files.extend(_collection_file_path(stack, name) for name in public_collections)
+            sched_ac.insert(
+                3,
+                f"Collections {', '.join(public_collections)} expose scheduling fields/state used by the job without changing slug-based public lookup",
+            )
+
+        if "cms" in capabilities and "public-site" in capabilities:
+            sched_depends.append("product.public-site-rendering")
+            sched_ac.append(
+                "Successful scheduled publishes make content visible to the existing public rendering path without requiring a manual republish"
+            )
+            sched_ac.append(
+                "Publish success triggers the existing public-rendering refresh/revalidation path or logs that it must happen immediately"
+            )
+            sched_files.append(_lib_path("publishing"))
+            sched_manual_check = "Set a draft page/post to `scheduled` with a near-future publishAt, wait for one cron cycle, and verify the public route starts serving it automatically."
+        else:
+            sched_ac.append("Published content appears on the appropriate surface after the scheduled time")
+            sched_manual_check = "Set publishAt to the near future, wait for one cron cycle, and verify the item transitions from scheduled to published automatically."
+
+        if backend in ("payload", "payload-cms"):
+            sched_files.append("src/server.ts or payload startup entry (updated to register scheduler)")
 
         upsert_story(
             "feature.scheduled-publishing",
@@ -723,15 +1038,13 @@ def generate_stories(spec):
                 "Do NOT implement a full job queue system (Bull, BullMQ) — node-cron is sufficient",
                 "Do NOT implement scheduled unpublishing in this story",
                 "Do NOT implement a job dashboard or management UI",
+                migration_dir_boundary,
             ],
-            expected_files=[
-                _lib_path("scheduler"),
-                "src/jobs/publish-scheduled.ts",
-            ],
-            depends_on=["feature.draft-publish"],
+            expected_files=sched_files,
+            depends_on=sched_depends,
             validation=_validation(
                 commands=["npm run build", "npm test"],
-                manual_check="Set publishAt to near future, verify content publishes automatically",
+                manual_check=sched_manual_check,
             ),
         )
 
@@ -816,7 +1129,7 @@ def generate_stories(spec):
             ),
         )
 
-    if "i18n" in capabilities:
+    if "i18n" in capabilities and "cms" not in capabilities:
         upsert_story(
             "feature.i18n-setup",
             "Setup internationalization routing and locale detection",
@@ -1020,34 +1333,39 @@ def generate_stories(spec):
     # ===================================================================
 
     if "public-site" in capabilities and "cms" in capabilities:
-        content_model = spec.get("answers", {}).get("guided_answers", {}).get("content_model", {})
-        cm_collections = content_model.get("collections", [])
-        # Build route list from collections that have public-facing content
-        public_col_names = [
-            c.get("name", "") for c in cm_collections
-            if c.get("name", "") not in ("media", "authors")
-        ]
-        if not public_col_names:
-            public_col_names = ["posts", "pages"]
+        public_col_names = _public_collection_names(spec)
+        global_names = [name.get("name", "").strip().lower() for name in _get_content_globals(spec) if isinstance(name, dict) and name.get("name")]
 
         public_ac = [
             f"Public route `/{name}/[slug]` exists and renders published content for the `{name}` collection"
             for name in public_col_names
         ]
         public_ac.extend([
+            "Each public route loads content by unique slug from the matching CMS collection instead of hardcoded page data",
             "Public pages use SSR or ISR for SEO (meta tags, Open Graph)",
             "Only published content is visible on public routes — draft content returns 404",
             "Public pages are accessible without authentication",
+            "Published-only filtering is enforced in the data loader/query layer, not just in the UI",
             "Public layout includes navigation derived from site-settings global (if it exists)",
         ])
+
+        if "homepage" in global_names:
+            public_ac.append("The public home page (`/`) renders data from the `homepage` global instead of placeholder content")
+        if "authors" in [c.get("name", "").strip().lower() for c in _get_content_collections(spec) if isinstance(c, dict)]:
+            public_ac.append("Post pages render author attribution from the `authors` collection when author data exists")
 
         public_files = []
         for name in public_col_names:
             public_files.append(_frontend_page_path(stack, f"(public)/{name}/[slug]"))
         public_files.append(_frontend_page_path(stack, "(public)"))
         public_files.append(_component_path("PublicLayout"))
+        public_files.append(_lib_path("public-content"))
 
-        public_depends = ["feature.draft-publish"] if "draft-publish" in features else ["bootstrap.frontend"]
+        public_depends = ["product.cms-content-model"]
+        if _feature_enabled_by_answers(spec, "draft-publish"):
+            public_depends.append("feature.draft-publish")
+        else:
+            public_depends.append("bootstrap.frontend")
         if "infra.static-delivery" in [s.get("story_key") for s in stories]:
             public_depends.append("infra.static-delivery")
 
@@ -1057,6 +1375,7 @@ def generate_stories(spec):
             f"Create public-facing pages for published content: {', '.join(public_col_names)}.",
             acceptance_criteria=public_ac,
             scope_boundaries=[
+                "Do NOT redefine CMS collections or globals in this story — reuse the content model already established",
                 "Do NOT implement comments or user interaction on public pages",
                 "Do NOT implement search on public pages — that is a separate story",
                 "Do NOT implement pagination in this story — show latest items only",
@@ -1065,7 +1384,7 @@ def generate_stories(spec):
             depends_on=public_depends,
             validation=_validation(
                 commands=["npm run build"],
-                manual_check="Public pages render published content; draft content returns 404",
+                manual_check="Public pages render published content from CMS data loaders; draft content returns 404; homepage pulls from globals when configured.",
             ),
         )
 
@@ -1331,7 +1650,7 @@ def generate_stories(spec):
                 "Do NOT implement API endpoints yet — only the data model and migration",
                 "Do NOT implement tags, categories, or recurring todos",
                 "Do NOT implement soft-delete",
-                _MIGRATION_DIR_BOUNDARY,
+                migration_dir_boundary,
             ],
             expected_files=[
                 "src/models/todo.ts",

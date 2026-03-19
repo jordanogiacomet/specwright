@@ -80,8 +80,8 @@ def apply_public_site(spec, architecture, stories):
             "acceptance_criteria": [
                 "next.config.ts configures image domains/remotePatterns for external images if applicable",
                 "Static assets (JS, CSS, fonts) have appropriate Cache-Control headers via Next.js output config",
-                "Next.js Image component is used for optimized image delivery in at least one component",
-                "Public routes are accessible without authentication",
+                "A shared public image rendering path uses Next.js Image (via a new PublicImage component or an updated existing public component)",
+                "The asset/header configuration is isolated to public delivery concerns and does not require creating public routes in this story",
                 "Admin routes remain unaffected by caching configuration",
             ],
             "scope_boundaries": [
@@ -91,6 +91,7 @@ def apply_public_site(spec, architecture, stories):
             ],
             "expected_files": [
                 "next.config.ts (updated with images and headers config)",
+                "src/components/PublicImage.tsx or equivalent shared public image component",
             ],
             "depends_on": ["bootstrap.frontend"],
             "validation": {

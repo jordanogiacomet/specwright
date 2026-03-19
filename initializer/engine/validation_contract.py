@@ -143,6 +143,48 @@ def _validation_block(ecosystem: str, test_runner: str, requires_real_tests: boo
     }
 
 
+def migration_commands(spec: dict[str, Any]) -> dict[str, str]:
+    """Return the canonical migration commands for the current stack."""
+    stack = spec.get("stack", {})
+    backend = (stack.get("backend") or "").lower().strip()
+    database = (stack.get("database") or "").lower().strip()
+    ecosystem = detect_ecosystem(stack)
+
+    if backend in ("payload", "payload-cms"):
+        return {
+            "run": "npm run db:migrate",
+            "create": "npm run db:migrate:create",
+            "status": "npm run db:migrate:status",
+        }
+
+    if backend == "django":
+        return {
+            "run": "python manage.py migrate",
+            "create": "python manage.py makemigrations",
+            "status": "python manage.py showmigrations",
+        }
+
+    if ecosystem == "python" and database and database != "sqlite":
+        return {
+            "run": "alembic upgrade head",
+            "create": 'alembic revision --autogenerate -m "specwright-migration"',
+            "status": "alembic current",
+        }
+
+    if ecosystem == "go" and database and database != "sqlite":
+        return {
+            "run": "go run ./cmd/migrate up",
+            "create": "go run ./cmd/migrate create specwright_migration",
+            "status": "go run ./cmd/migrate status",
+        }
+
+    return {
+        "run": "npm run db:migrate",
+        "create": "npm run db:migrate:create",
+        "status": "npm run db:migrate:status",
+    }
+
+
 def build_validation_bundle(spec: dict[str, Any]) -> dict[str, Any]:
     """Generate commands + validation contract from the planned stack."""
     stack = spec.get("stack", {})
@@ -188,13 +230,10 @@ def build_validation_bundle(spec: dict[str, Any]) -> dict[str, Any]:
         elif database and database != "sqlite":
             setup["db_start"] = f"# Start {database} manually"
 
-        if backend in ("payload", "payload-cms"):
-            commands["db_migrate"] = "npx payload migrate"
-            commands["db_seed"] = "npx payload seed"
-            setup["db_migrate"] = "npx payload migrate"
-        elif database:
-            commands["db_migrate"] = "npm run db:migrate"
-            setup["db_migrate"] = "npm run db:migrate"
+        if database:
+            migration = migration_commands(spec)
+            commands["db_migrate"] = migration["run"]
+            setup["db_migrate"] = migration["run"]
 
         if "scheduled-jobs" in capabilities:
             commands["jobs"] = "npm run jobs"
@@ -226,12 +265,10 @@ def build_validation_bundle(spec: dict[str, Any]) -> dict[str, Any]:
         elif database and database != "sqlite":
             setup["db_start"] = f"# Start {database} manually"
 
-        if backend == "django":
-            commands["db_migrate"] = "python manage.py migrate"
-            setup["db_migrate"] = "python manage.py migrate"
-        elif database and database != "sqlite":
-            commands["db_migrate"] = "alembic upgrade head"
-            setup["db_migrate"] = "alembic upgrade head"
+        if database and database != "sqlite":
+            migration = migration_commands(spec)
+            commands["db_migrate"] = migration["run"]
+            setup["db_migrate"] = migration["run"]
 
         if "scheduled-jobs" in capabilities:
             commands["jobs"] = "python manage.py run_jobs" if backend == "django" else "python -m app.jobs"
@@ -264,8 +301,9 @@ def build_validation_bundle(spec: dict[str, Any]) -> dict[str, Any]:
             setup["db_start"] = f"# Start {database} manually"
 
         if database and database != "sqlite":
-            commands["db_migrate"] = "go run ./cmd/migrate up"
-            setup["db_migrate"] = "go run ./cmd/migrate up"
+            migration = migration_commands(spec)
+            commands["db_migrate"] = migration["run"]
+            setup["db_migrate"] = migration["run"]
 
         if "scheduled-jobs" in capabilities:
             commands["jobs"] = "go run ./cmd/worker"

@@ -1,7 +1,7 @@
 # Specwright — Full Repository Analysis
 
 **Date**: 2026-03-18 (updated 2026-03-19)
-**Test suite**: 320/320 passed — 146 new tests added across 6 sessions
+**Test suite**: 337/337 passed — 163 new tests added across 8 sessions
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow), `output/editorial-control-center` (Payload editorial)
 
 ### Handoff For Future Agents
@@ -53,6 +53,12 @@ When the main agent makes code changes, record the new state here before moving 
 | BUG-012 | FIXED | Payload admin `page.tsx` imported `./importMap` but file is at `../../importMap` — build failed with `Module not found` |
 | BUG-013 | FIXED | Payload `layout.tsx` missing `serverFunction` prop required by `RootLayout` in Payload v3.79+ — build failed with type error |
 | BUG-014 | FIXED | Payload `not-found.tsx` had unused imports and missing `params`/`searchParams` props — lint warnings and type error |
+| BUG-015 | FIXED | Payload CLI on Node 24 hung on default `tsx` path for `migrate*` / `generate:types`; generator now uses `payload --disable-transpile` via npm scripts |
+| BUG-016 | FIXED | Payload scaffold claimed migrations live in `src/lib/migrations/` but `postgresAdapter` did not set `migrationDir`, so CLI wrote to `src/migrations/` |
+| BUG-017 | FIXED | Playbook/editorial workflow booleans (`draft_publish`, `preview`, `scheduled_publishing`) now remove disabled features before story generation |
+| QUALITY-002 | FIXED | CMS/editorial stories now have explicit content-model ownership, tighter dependencies, concrete preview/public/scheduler contracts, and less ambiguous storage/role language |
+| IMP-012 | FIXED | i18n capability stories now have stable `story_key`s and CMS i18n no longer overlaps with the generic `feature.i18n-setup` story |
+| BUG-018 | FIXED | Generated Vitest config now forces automatic JSX runtime so Next App Router TSX smoke tests do not fail with `React is not defined` |
 
 ---
 
@@ -102,7 +108,167 @@ When the main agent makes code changes, record the new state here before moving 
 
 ### Remaining limitation
 
-This session closes the validation/test pipeline contract itself. The separate `payload migrate*` compatibility issue on Node 24 remains a different problem and was not part of this patch.
+This session closes the validation/test pipeline contract itself. The separate `payload migrate*` compatibility issue on Node 24 was handled in Session 7 below.
+
+## Session 7 — Payload CLI Node 24 Compatibility + General Debug (Completed, 2026-03-19)
+
+### What was fixed
+
+1. **Payload CLI on Node 24 no longer uses the hanging transpile path**
+   - Root cause: `payload` CLI under Node `v24.11.1` hung when invoked through its default `tsx`-based transpile path (`payload migrate*`, `payload generate:types`).
+   - Reproduction:
+     - `./node_modules/.bin/payload migrate:create specwright_test --forceAcceptWarning` → timed out after 20s
+     - `./node_modules/.bin/payload --disable-transpile migrate:create specwright_test --forceAcceptWarning` → PASS
+   - Fix:
+     - `initializer/renderers/scaffold_engine.py` now generates Payload scripts:
+       - `generate:types = "payload --disable-transpile generate:types"`
+       - `db:migrate = "payload --disable-transpile migrate"`
+       - `db:migrate:create = "payload --disable-transpile migrate:create"`
+       - `db:migrate:status = "payload --disable-transpile migrate:status"`
+     - `initializer/engine/validation_contract.py` now advertises Payload migrations as `npm run db:migrate`
+     - `initializer/renderers/codex_bundle.py` now emits migration instructions via the same npm scripts
+
+2. **Payload migration directory is now real, not just documented**
+   - Root cause: AGENTS/stories/new-project output said Payload migrations must live in `src/lib/migrations/`, but the scaffolded `postgresAdapter` omitted `migrationDir`, so Payload created migrations under its default `src/migrations/`.
+   - Fix:
+     - `initializer/renderers/scaffold_engine.py` now sets `migrationDir: path.resolve(dirname, "lib/migrations")` in `src/payload.config.ts`
+   - Result:
+     - The documented migration path and the actual runtime behavior now match.
+
+3. **Migration wording was normalized across the generator**
+   - `initializer/engine/story_engine.py` now derives migration command wording from the stack instead of hardcoding `npm run db:migrate:create` for every backend.
+   - `initializer/capabilities/cms.py` and `initializer/capabilities/i18n.py` now emit stack-aware migration acceptance criteria.
+
+4. **Payload command contract is cleaner**
+   - Removed the invalid `db_seed` Payload command from the shared validation contract.
+   - `initializer/renderers/openclaw_bundle.py` dead-path command helpers were also updated to stop advertising stale `npx payload ...` commands.
+
+### Validation performed
+
+1. **Real runtime reproduction**
+   - In `output/editorial-control-center` on Node `v24.11.1`:
+     - `./node_modules/.bin/payload migrate:create specwright_test --forceAcceptWarning` → timed out after 20s
+     - `./node_modules/.bin/payload --disable-transpile migrate:create specwright_test --forceAcceptWarning` → PASS
+
+2. **Focused regression suite**
+   - `.venv/bin/python -m pytest tests/unit/test_scaffold_engine.py tests/unit/test_prepare_project.py tests/unit/test_bundles.py tests/unit/test_story_engine.py -q`
+   - Result: `122 passed`
+
+3. **Full repository suite**
+   - `.venv/bin/python -m pytest -q`
+   - Result: `321 passed in 14.88s`
+
+### General debug pass
+
+- Ran a repo-wide grep for stale `TODO` / `FIXME` / `HACK` markers in `initializer/` and `tests/`.
+- No new production bug surfaced beyond the Payload CLI + migrationDir inconsistencies fixed above.
+- One remaining marker in `initializer/engine/story_engine.py` (`TODO-APP SPECIFIC STORIES`) is a roadmap note, not a runtime defect.
+
+## Session 8 — Editorial Story Contract Tightening (Completed, 2026-03-19)
+
+### What was fixed
+
+1. **Disabled editorial workflows now truly disappear from the plan**
+   - `initializer/flow/new_project.py`
+   - Added feature-override normalization for structured playbook answers / critical confirmations.
+   - `draft_publish: false`, `preview: false`, and `scheduled_publishing: false` now remove `draft-publish`, `preview`, and `scheduled-publishing` from `spec["features"]` before downstream artifact generation.
+   - This closes a real story-ordering issue where `examples/next-payload-postgres.input.yaml` still produced scheduled-publishing despite explicitly disabling it.
+
+2. **CMS content model story is now an actual dependency anchor**
+   - `initializer/capabilities/cms.py`
+   - Added stable `story_key = product.cms-content-model`.
+   - The story now enumerates concrete fields for known editorial collections (`pages`, `posts`, `authors`, `media`), concrete fields for globals (`site-settings`, `homepage`), slug ownership for public surfaces, and explicit relationship notes (`posts -> authors/media`).
+   - Expected files now include collection/global files and `src/payload.config.ts`, so later stories can depend on a real owner for schema work.
+   - Architecture wording was tightened so local-first storage no longer claims a CDN by default.
+
+3. **Public-site, RBAC, media, draft/publish, preview, and scheduler stories were de-ambiguous**
+   - `initializer/engine/story_engine.py`
+   - Editorial RBAC now uses the canonical `admin` / `editor` / `reviewer` fallback in CMS contexts and defines concrete responsibilities instead of generic "authorized roles".
+   - `feature.media-library` now depends on `product.cms-content-model` in CMS projects and explicitly distinguishes schema ownership from upload/storage configuration.
+   - `feature.draft-publish` now depends on the CMS content model, names explicit editorial states (`draft`, `in_review`, `published`), and aligns publishing authority to `reviewer/admin` instead of the older ambiguous role wording.
+   - `feature.preview` now becomes a concrete preview contract for CMS/public-site projects (`/api/preview`, `/api/exit-preview`, draft-mode/public-loader reuse) and depends on the public rendering story.
+   - `feature.scheduled-publishing` now only appears when enabled, requires draft/publish first, depends on the content model/public rendering in CMS projects, and names concrete job registration/env/logging/idempotency expectations.
+   - `product.public-site-rendering` now depends on `product.cms-content-model`, names slug-based loaders, and makes homepage/global ownership explicit.
+
+4. **Static delivery and i18n stories were tightened to avoid premature or overlapping work**
+   - `initializer/capabilities/public_site.py`
+     - Static-delivery no longer claims public routes already exist; it is now clearly infra-only and expects a reusable public image path instead.
+   - `initializer/capabilities/i18n.py`
+     - Added stable `story_key`s for CMS and non-CMS i18n stories.
+     - CMS+i18n is now split into `feature.cms-localization` and `feature.locale-routing`, with explicit dependencies on content modeling/public rendering.
+   - `initializer/engine/story_engine.py`
+     - The generic `feature.i18n-setup` story is now only emitted for non-CMS i18n projects, preventing overlapping locale stories.
+
+5. **Story coverage validation was taught the new canonical story keys**
+   - `initializer/validation/story_coverage.py`
+   - Coverage now recognizes `product.cms-content-model`, `product.public-site-rendering`, `infra.static-delivery`, and the new i18n story keys.
+
+### Validation performed
+
+1. **Focused story-generation regression suite**
+   - `.venv/bin/python -m pytest tests/unit/test_story_engine.py tests/unit/test_cms_capability.py tests/unit/test_public_site_capability.py tests/unit/test_spec_loader.py tests/unit/test_i18n_capability.py -q`
+   - Result: `60 passed`
+
+2. **Full repository suite**
+   - `.venv/bin/python -m pytest -q`
+   - Result: `337 passed in 11.54s`
+
+3. **Editorial playbook smoke validation (generator-level)**
+   - Loaded `examples/next-payload-postgres.input.yaml`, applied capability handlers, and regenerated stories in-process.
+   - Verified:
+     - `product.cms-content-model` is present and owns the schema with explicit fields/relations/globals.
+     - `feature.media-library`, `feature.draft-publish`, and `product.public-site-rendering` now depend on the content-model story.
+     - `feature.preview` now depends on `product.public-site-rendering` and expects preview route handlers.
+     - `feature.scheduled-publishing` is **absent** for this playbook because `scheduled_publishing: false`.
+     - Final features for the playbook are now `authentication`, `roles`, `media-library`, `draft-publish`, `preview` (no premature scheduler story).
+
+### Remaining limitation
+
+- This session validated the generator/contracts thoroughly, but it did **not** rerun a fresh end-to-end `initializer new` + `prepare` + generated-project `npm build` / `ralph.sh` cycle after the new preview/public/scheduler wording changes.
+- The new CMS preview contract assumes the generated implementation will use explicit preview route handlers plus draft/public loader reuse; that contract is unit-tested but not yet runtime-verified in a freshly generated project.
+
+## Session 9 — Bootstrap Smoke Test Fix For Payload/Next Scaffold (Completed, 2026-03-19)
+
+### What was fixed
+
+1. **Vitest now compiles generated Next.js TSX with automatic JSX runtime**
+   - `initializer/renderers/scaffold_engine.py`
+   - Root cause: the generated smoke test imported `src/app/page.tsx` and rendered it through Vitest, but the generated `vitest.config.ts` did not force JSX automatic runtime for TSX imported from the Next App Router scaffold.
+   - Resulting failure in real generated project:
+     - `ReferenceError: React is not defined`
+     - failure site: `src/app/page.tsx`
+     - failing command: `npm test`
+   - Fix:
+     - generated `vitest.config.ts` now includes:
+       - `esbuild.jsx = "automatic"`
+       - `esbuild.jsxImportSource = "react"`
+
+2. **Regression coverage updated**
+   - `tests/unit/test_scaffold_engine.py`
+   - Added assertions that the generated Vitest config includes the automatic JSX runtime settings.
+
+3. **Real generated editorial project was patched and revalidated**
+   - `output/editorial-control-center/vitest.config.ts`
+   - Applied the same runtime setting in the already-generated project to confirm the failure disappeared without requiring full regeneration.
+
+### Validation performed
+
+1. **Focused scaffold regression**
+   - `.venv/bin/python -m pytest tests/unit/test_scaffold_engine.py -q`
+   - Result: `56 passed`
+
+2. **Full repository suite**
+   - `.venv/bin/python -m pytest -q`
+   - Result: `337 passed in 5.80s`
+
+3. **Real generated project validation (`output/editorial-control-center`)**
+   - `npm test` — PASS
+   - `npm run typecheck` — PASS
+   - `npm run build` — PASS
+
+### Remaining limitation
+
+- The Next.js build still prints a lockfile-selection warning because the repo root also has a `package-lock.json`. This is noisy but not a blocker for the generated project or the `ralph` loop.
 
 ## Session 4 — Editorial Validation and Payload v3.79 Compatibility (2026-03-19)
 

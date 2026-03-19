@@ -85,7 +85,7 @@ def test_detect_commands_returns_validation_contract_for_package_json(tmp_path):
     assert result["commands"]["build"] == "npm run build"
     assert result["commands"]["dev"] == "npm run dev"
     assert result["commands"]["typecheck"] == ""
-    assert result["commands"]["db_migrate"] == "npx payload migrate"
+    assert result["commands"]["db_migrate"] == "npm run db:migrate"
     assert result["validation"] == {
         "ecosystem": "node",
         "test_runner": "vitest",

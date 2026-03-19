@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from initializer.engine.validation_contract import build_validation_bundle
+from initializer.engine.validation_contract import build_validation_bundle, migration_commands
 
 
 def _get_decision_signals(spec: dict[str, Any]) -> dict[str, Any]:
@@ -257,9 +257,8 @@ def _node_commands(stack: dict[str, Any], capabilities: list[str], deploy_target
         setup["db_start"] = f"# Start {database} manually"
 
     if is_payload:
-        commands["db_migrate"] = "npx payload migrate"
-        commands["db_seed"] = "npx payload seed"
-        setup["db_migrate"] = "npx payload migrate"
+        commands["db_migrate"] = migration_commands({"stack": stack})["run"]
+        setup["db_migrate"] = migration_commands({"stack": stack})["run"]
     elif database:
         commands["db_migrate"] = "npm run db:migrate"
         setup["db_migrate"] = "npm run db:migrate"

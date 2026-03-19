@@ -18,6 +18,7 @@ def test_generate_stories_creates_canonical_editorial_stories():
             "authentication",
             "roles",
             "media-library",
+            "draft-publish",
             "preview",
             "scheduled-publishing",
         ],
@@ -637,3 +638,196 @@ def test_no_public_site_rendering_without_capability():
     stories = generate_stories(spec)
     keys = [s.get("story_key") for s in stories]
     assert "product.public-site-rendering" not in keys
+
+
+def test_editorial_roles_fall_back_to_canonical_roles_when_cms_enabled():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "roles"],
+        "capabilities": ["cms"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    roles_story = next(s for s in stories if s.get("story_key") == "feature.roles")
+    criteria = " ".join(roles_story["acceptance_criteria"])
+    assert "editor" in criteria
+    assert "reviewer" in criteria
+    assert "manage users" in criteria
+
+
+def test_editorial_media_library_depends_on_cms_content_model():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "media-library"],
+        "capabilities": ["cms"],
+        "stories": [
+            {
+                "id": "ST-001",
+                "story_key": "product.cms-content-model",
+                "title": "Define CMS content model",
+                "description": "Existing CMS model story.",
+            }
+        ],
+    }
+    stories = generate_stories(spec)
+    media = next(s for s in stories if s.get("story_key") == "feature.media-library")
+    assert "product.cms-content-model" in media["depends_on"]
+
+
+def test_editorial_draft_publish_depends_on_cms_content_model():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "roles", "draft-publish"],
+        "capabilities": ["cms"],
+        "stories": [
+            {
+                "id": "ST-001",
+                "story_key": "product.cms-content-model",
+                "title": "Define CMS content model",
+                "description": "Existing CMS model story.",
+            }
+        ],
+    }
+    stories = generate_stories(spec)
+    draft = next(s for s in stories if s.get("story_key") == "feature.draft-publish")
+    criteria = " ".join(draft["acceptance_criteria"])
+    assert "in_review" in criteria
+    assert "Publishing requires admin or reviewer role" in criteria
+    assert "product.cms-content-model" in draft["depends_on"]
+    assert any("src/lib/migrations" in item for item in draft["scope_boundaries"])
+
+
+def test_editorial_preview_uses_preview_handlers_and_depends_on_public_rendering():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "draft-publish", "preview"],
+        "capabilities": ["cms", "public-site"],
+        "stories": [
+            {
+                "id": "ST-001",
+                "story_key": "product.cms-content-model",
+                "title": "Define CMS content model",
+                "description": "Existing CMS model story.",
+            }
+        ],
+        "answers": {
+            "guided_answers": {
+                "content_model": {
+                    "collections": [
+                        {"name": "pages", "purpose": "Pages"},
+                        {"name": "posts", "purpose": "Posts"},
+                    ]
+                }
+            }
+        },
+    }
+    stories = generate_stories(spec)
+    preview = next(s for s in stories if s.get("story_key") == "feature.preview")
+    files = " ".join(preview["expected_files"])
+    assert "api/preview/route.ts" in files
+    assert "product.public-site-rendering" in preview["depends_on"]
+
+
+def test_editorial_scheduled_publishing_depends_on_public_rendering():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "draft-publish", "scheduled-publishing"],
+        "capabilities": ["cms", "public-site"],
+        "stories": [
+            {
+                "id": "ST-001",
+                "story_key": "product.cms-content-model",
+                "title": "Define CMS content model",
+                "description": "Existing CMS model story.",
+            }
+        ],
+        "answers": {
+            "guided_answers": {
+                "content_model": {
+                    "collections": [
+                        {"name": "pages", "purpose": "Pages"},
+                        {"name": "posts", "purpose": "Posts"},
+                    ]
+                }
+            }
+        },
+    }
+    stories = generate_stories(spec)
+    scheduled = next(s for s in stories if s.get("story_key") == "feature.scheduled-publishing")
+    criteria = " ".join(scheduled["acceptance_criteria"])
+    assert "revalidation" in criteria or "public-rendering refresh" in criteria
+    assert "product.cms-content-model" in scheduled["depends_on"]
+    assert "product.public-site-rendering" in scheduled["depends_on"]
+
+
+def test_public_site_rendering_depends_on_cms_content_model():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "draft-publish"],
+        "capabilities": ["cms", "public-site"],
+        "stories": [
+            {
+                "id": "ST-001",
+                "story_key": "product.cms-content-model",
+                "title": "Define CMS content model",
+                "description": "Existing CMS model story.",
+            }
+        ],
+    }
+    stories = generate_stories(spec)
+    public = next(s for s in stories if s.get("story_key") == "product.public-site-rendering")
+    criteria = " ".join(public["acceptance_criteria"])
+    assert "slug" in criteria
+    assert "product.cms-content-model" in public["depends_on"]
+
+
+def test_cms_i18n_uses_capability_specific_stories_not_generic_i18n_setup():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": [],
+        "capabilities": ["cms", "i18n"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    keys = [s.get("story_key") for s in stories]
+    assert "feature.i18n-setup" not in keys
+
+
+def test_story_engine_respects_disabled_editorial_workflow_answers():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "draft-publish", "preview", "scheduled-publishing"],
+        "capabilities": ["cms", "public-site"],
+        "stories": [],
+        "answers": {
+            "critical_confirmations": {
+                "preview_workflow": False,
+                "draft_publish_workflow": False,
+                "background_jobs": False,
+            },
+            "guided_answers": {
+                "editorial_workflows": {
+                    "draft_publish": False,
+                    "preview": False,
+                    "scheduled_publishing": False,
+                }
+            },
+        },
+    }
+    stories = generate_stories(spec)
+    keys = [s.get("story_key") for s in stories]
+    assert "feature.draft-publish" not in keys
+    assert "feature.preview" not in keys
+    assert "feature.scheduled-publishing" not in keys
+
+
+def test_preview_and_scheduled_are_not_generated_without_draft_publish():
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "preview", "scheduled-publishing"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    keys = [s.get("story_key") for s in stories]
+    assert "feature.preview" not in keys
+    assert "feature.scheduled-publishing" not in keys
