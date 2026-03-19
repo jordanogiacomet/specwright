@@ -3,6 +3,8 @@ import json
 import re
 from typing import Any
 
+import yaml
+
 from initializer.engine.archetype_engine import detect_archetype
 from initializer.engine.capability_derivation import derive_capabilities_for_spec
 from initializer.engine.capability_engine import apply_capabilities
@@ -33,6 +35,7 @@ from initializer.renderers.codex_bundle import write_codex_bundle
 from initializer.renderers.scaffold_engine import write_scaffold
 from initializer.flow.challenges_flow import collect_challenge_decisions
 from initializer.flow.design_style_flow import collect_design_style
+from initializer.playbooks.playbook_loader import load_playbook
 
 from initializer.validation.prd_validator import validate_prd
 from initializer.validation.story_coverage import check_story_coverage
@@ -754,33 +757,79 @@ def _safe_choice(value: Any, options: list[str], default: str) -> str:
 def _resolve_spec_input_path(spec_path: str) -> Path:
     candidate = Path(spec_path).expanduser()
     if candidate.is_dir():
+        for default_name in ("spec.json", "spec.yaml", "spec.yml"):
+            default_spec = candidate / default_name
+            if default_spec.exists():
+                return default_spec
         candidate = candidate / "spec.json"
     return candidate
 
 
-def load_project_spec(spec_path: str) -> dict[str, Any]:
-    path = _resolve_spec_input_path(spec_path)
+def _read_structured_spec(path: Path) -> dict[str, Any]:
+    raw = path.read_text(encoding="utf-8")
+    suffix = path.suffix.lower()
 
-    if not path.exists():
-        raise ValueError(f"Spec file not found: {path}")
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Spec file is not valid JSON: {path} ({exc})"
-        ) from exc
+    if suffix == ".json":
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Spec file is not valid JSON: {path} ({exc})"
+            ) from exc
+    elif suffix in {".yaml", ".yml"}:
+        try:
+            data = yaml.safe_load(raw)
+        except yaml.YAMLError as exc:
+            raise ValueError(
+                f"Spec file is not valid YAML: {path} ({exc})"
+            ) from exc
+    else:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as json_exc:
+            try:
+                data = yaml.safe_load(raw)
+            except yaml.YAMLError as yaml_exc:
+                raise ValueError(
+                    f"Spec file is not valid JSON or YAML: {path} "
+                    f"(JSON: {json_exc}; YAML: {yaml_exc})"
+                ) from yaml_exc
 
     if not isinstance(data, dict):
-        raise ValueError(f"Spec file must contain a JSON object: {path}")
+        raise ValueError(f"Spec file must contain an object: {path}")
 
+    return data
+
+
+def _normalize_loaded_answers(data: dict[str, Any]) -> dict[str, Any]:
     answers = data.get("answers")
     if not isinstance(answers, dict):
         answers = {}
 
+    guided_answers = data.get("guided_answers")
+    if not isinstance(guided_answers, dict):
+        guided_answers = {}
+
+    critical_confirmations = data.get("critical_confirmations")
+    if not isinstance(critical_confirmations, dict):
+        critical_confirmations = {}
+
+    project_identity = guided_answers.get("project_identity")
+    if not isinstance(project_identity, dict):
+        project_identity = {}
+
+    product_surface = guided_answers.get("product_surface")
+    if not isinstance(product_surface, dict):
+        product_surface = {}
+
+    deploy_target = guided_answers.get("deploy_target")
+    if not isinstance(deploy_target, dict):
+        deploy_target = {}
+
     project_name = (
         answers.get("project_name")
         or data.get("project_name")
+        or project_identity.get("name")
         or "Generated Project"
     )
 
@@ -788,12 +837,14 @@ def load_project_spec(spec_path: str) -> dict[str, Any]:
         answers.get("summary")
         or data.get("summary")
         or data.get("prompt")
+        or project_identity.get("summary")
         or project_name
     )
 
     project_slug = (
         answers.get("project_slug")
         or data.get("project_slug")
+        or project_identity.get("slug")
         or _slugify(project_name)
     )
 
@@ -802,24 +853,81 @@ def load_project_spec(spec_path: str) -> dict[str, Any]:
         "project_slug": project_slug,
         "summary": summary,
         "surface": _safe_choice(
-            answers.get("surface") or data.get("surface"),
+            answers.get("surface")
+            or data.get("surface")
+            or product_surface.get("mode"),
             ["internal_admin_only", "admin_plus_public_site"],
             "admin_plus_public_site",
         ),
         "deploy_target": _safe_choice(
-            answers.get("deploy_target") or data.get("deploy_target"),
+            answers.get("deploy_target")
+            or data.get("deploy_target")
+            or deploy_target.get("runtime"),
             ["docker", "docker_and_k8s_later"],
             "docker",
         ),
     }
 
+    if guided_answers:
+        normalized_answers["guided_answers"] = guided_answers
+
+    if critical_confirmations:
+        normalized_answers["critical_confirmations"] = critical_confirmations
+
+    return normalized_answers
+
+
+def _playbook_detection_hint(playbook_id: Any) -> str:
+    if not isinstance(playbook_id, str) or not playbook_id.strip():
+        return ""
+
+    hint_parts = [playbook_id.replace("-", " ")]
+
+    try:
+        playbook = load_playbook(playbook_id)
+    except ValueError:
+        playbook = {}
+
+    detection_hints = playbook.get("detection_hints")
+    if not isinstance(detection_hints, dict):
+        return " ".join(hint_parts)
+
+    keywords = detection_hints.get("keywords")
+    if isinstance(keywords, list):
+        hint_parts.extend(keyword for keyword in keywords if isinstance(keyword, str))
+
+    example_intents = detection_hints.get("example_intents")
+    if isinstance(example_intents, list):
+        hint_parts.extend(intent for intent in example_intents if isinstance(intent, str))
+
+    return " ".join(part.strip() for part in hint_parts if part.strip())
+
+
+def load_project_spec(spec_path: str) -> dict[str, Any]:
+    path = _resolve_spec_input_path(spec_path)
+
+    if not path.exists():
+        raise ValueError(f"Spec file not found: {path}")
+
+    data = _read_structured_spec(path)
+    normalized_answers = _normalize_loaded_answers(data)
+
     prompt = data.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
-        prompt = summary or project_name
+        prompt = (
+            normalized_answers.get("summary")
+            or normalized_answers.get("project_name")
+            or "Generated Project"
+        )
+
+    detection_prompt = prompt
+    playbook_hint = _playbook_detection_hint(data.get("playbook_id"))
+    if playbook_hint:
+        detection_prompt = f"{prompt}\n{playbook_hint}"
 
     archetype_data = data.get("archetype_data")
     if not isinstance(archetype_data, dict) or not archetype_data.get("id"):
-        archetype_data = detect_archetype(prompt)
+        archetype_data = detect_archetype(detection_prompt)
 
     stack = data.get("stack")
     if not isinstance(stack, dict):

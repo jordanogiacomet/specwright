@@ -548,7 +548,8 @@ def _payload_layout() -> str:
 /* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME. */
 import config from "@payload-config";
 import { importMap } from "./importMap";
-import { RootLayout } from "@payloadcms/next/layouts";
+import { RootLayout, handleServerFunctions } from "@payloadcms/next/layouts";
+import type { ServerFunctionClient } from "payload";
 import React from "react";
 
 import "./custom.scss";
@@ -557,8 +558,17 @@ type Args = {
   children: React.ReactNode;
 };
 
+const serverFunction: ServerFunctionClient = async (args) => {
+  "use server";
+  return handleServerFunctions({
+    ...args,
+    config,
+    importMap,
+  });
+};
+
 const Layout = ({ children }: Args) => (
-  <RootLayout config={config} importMap={importMap}>
+  <RootLayout config={config} importMap={importMap} serverFunction={serverFunction}>
     {children}
   </RootLayout>
 );
@@ -571,7 +581,7 @@ def _payload_page() -> str:
     return """/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */
 /* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME. */
 import config from "@payload-config";
-import { importMap } from "./importMap";
+import { importMap } from "../../importMap";
 import {
   RootPage,
   generatePageMetadata,
@@ -769,7 +779,7 @@ def write_scaffold(output_dir: Path, spec: dict[str, Any]) -> None:
         _write(output_dir, "src/collections/Users.ts", _payload_users_collection())
         _write(output_dir, "src/app/(payload)/admin/[[...segments]]/page.tsx", _payload_page())
         _write(output_dir, "src/app/(payload)/admin/[[...segments]]/not-found.tsx",
-               'import { NotFoundPage, generatePageMetadata } from "@payloadcms/next/views";\nimport config from "@payload-config";\nimport { importMap } from "../../importMap";\n\nexport default NotFoundPage;\n')
+               '/* THIS FILE WAS GENERATED AUTOMATICALLY BY PAYLOAD. */\n/* DO NOT MODIFY IT BECAUSE IT COULD BE REWRITTEN AT ANY TIME. */\nimport config from "@payload-config";\nimport { importMap } from "../../importMap";\nimport { NotFoundPage, generatePageMetadata } from "@payloadcms/next/views";\n\ntype Args = {\n  params: Promise<{ segments: string[] }>;\n  searchParams: Promise<{ [key: string]: string | string[] }>;\n};\n\nexport const generateMetadata = ({ params, searchParams }: Args) =>\n  generatePageMetadata({ config, params, searchParams });\n\nconst NotFound = ({ params, searchParams }: Args) =>\n  NotFoundPage({ config, importMap, params, searchParams });\n\nexport default NotFound;\n')
         _write(output_dir, "src/app/(payload)/layout.tsx", _payload_layout())
         _write(output_dir, "src/app/(payload)/custom.scss", _payload_custom_scss())
         _write(output_dir, "src/app/(payload)/importMap.ts", _payload_import_map())

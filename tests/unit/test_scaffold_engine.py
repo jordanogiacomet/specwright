@@ -191,6 +191,31 @@ def test_payload_creates_payload_specific_files(tmp_path):
     assert (tmp_path / "src/app/(payload)/importMap.ts").exists()
 
 
+def test_payload_admin_page_imports_importmap_from_correct_path(tmp_path):
+    """page.tsx lives in admin/[[...segments]]/ — must reach ../../importMap, not ./importMap."""
+    write_scaffold(tmp_path, _payload_spec())
+
+    page = (tmp_path / "src/app/(payload)/admin/[[...segments]]/page.tsx").read_text()
+    assert '../../importMap' in page, "page.tsx must import importMap via ../../importMap"
+    assert './importMap"' not in page.replace("../../importMap", ""), (
+        "page.tsx must not use ./importMap (wrong relative path)"
+    )
+
+    not_found = (tmp_path / "src/app/(payload)/admin/[[...segments]]/not-found.tsx").read_text()
+    assert '../../importMap' in not_found, "not-found.tsx must import importMap via ../../importMap"
+    assert 'params, searchParams' in not_found, "not-found.tsx must pass params and searchParams to NotFoundPage"
+
+
+def test_payload_layout_passes_server_function(tmp_path):
+    """Payload v3.79+ requires serverFunction prop on RootLayout."""
+    write_scaffold(tmp_path, _payload_spec())
+
+    layout = (tmp_path / "src/app/(payload)/layout.tsx").read_text()
+    assert "serverFunction" in layout, "layout must pass serverFunction to RootLayout"
+    assert "handleServerFunctions" in layout, "layout must import handleServerFunctions"
+    assert '"use server"' in layout, "serverFunction must be a server action"
+
+
 def test_payload_config_references_database_uri(tmp_path):
     write_scaffold(tmp_path, _payload_spec())
 
