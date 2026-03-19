@@ -250,6 +250,14 @@ def test_openclaw_commands_json_has_real_commands_for_node(tmp_path):
     for key, value in commands["commands"].items():
         assert value != "", f"Command '{key}' should not be empty"
 
+    assert commands["validation"] == {
+        "ecosystem": "node",
+        "test_runner": "vitest",
+        "requires_real_tests": True,
+        "block_on": ["test", "build", "typecheck"],
+        "warn_on": ["lint"],
+    }
+
 
 def test_openclaw_commands_json_has_setup_commands(tmp_path):
     spec = _make_spec()
@@ -307,6 +315,8 @@ def test_openclaw_commands_json_python_stack(tmp_path):
     assert "pytest" in commands["commands"]["test"]
     assert "ruff" in commands["commands"]["lint"]
     assert "manage.py" in commands["commands"]["dev"]
+    assert commands["validation"]["ecosystem"] == "python"
+    assert commands["validation"]["test_runner"] == "pytest"
 
 
 def test_openclaw_commands_json_go_stack(tmp_path):
@@ -322,6 +332,8 @@ def test_openclaw_commands_json_go_stack(tmp_path):
     assert "go test" in commands["commands"]["test"]
     assert "golangci-lint" in commands["commands"]["lint"]
     assert "go build" in commands["commands"]["build"]
+    assert commands["validation"]["ecosystem"] == "go"
+    assert commands["validation"]["test_runner"] == "go-test"
 
 
 # -------------------------------------------------------
@@ -392,6 +404,30 @@ def test_codex_ralph_sh_uses_separate_migration_commands(tmp_path):
     content = (tmp_path / "ralph.sh").read_text()
     assert "npx payload migrate:create" in content
     assert "npx payload migrate:status" in content
+
+
+def test_codex_ralph_sh_uses_installed_codex_cli(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert "codex exec" in content
+    assert "@openai/codex@latest" not in content
+
+
+def test_codex_ralph_sh_reads_validation_contract_from_commands_json(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert 'COMMANDS_FILE="$SCRIPT_DIR/.openclaw/commands.json"' in content
+    assert 'TEST_CMD=$(jq -r \'.commands.test // ""\' "$COMMANDS_FILE")' in content
+    assert 'TEST_RUNNER=$(jq -r \'.validation.test_runner // "none"\' "$COMMANDS_FILE")' in content
+    assert 'REQUIRES_REAL_TESTS=$(jq -r \'.validation.requires_real_tests // false\' "$COMMANDS_FILE")' in content
+    assert 'validation_policy_contains() {' in content
+    assert 'run_validation_command "test" "$TEST_CMD" "Tests"' in content
+    assert "npm test --if-present" not in content
+    assert "npm run lint --if-present" not in content
 
 
 # -------------------------------------------------------

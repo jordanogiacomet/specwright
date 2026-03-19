@@ -52,7 +52,7 @@ def test_scaffold_creates_root_config_files(tmp_path):
         ".gitignore",
         "tsconfig.json",
         "next-env.d.ts",
-        "tsconfig.test.json",
+        "vitest.config.ts",
         "package.json",
         "next.config.ts",
         "postcss.config.mjs",
@@ -62,6 +62,8 @@ def test_scaffold_creates_root_config_files(tmp_path):
     ]:
         assert (tmp_path / filename).exists(), f"Missing: {filename}"
 
+    assert not (tmp_path / "tsconfig.test.json").exists()
+
 
 def test_scaffold_creates_nextjs_app_files(tmp_path):
     write_scaffold(tmp_path, _make_spec())
@@ -69,7 +71,7 @@ def test_scaffold_creates_nextjs_app_files(tmp_path):
     assert (tmp_path / "src/app/layout.tsx").exists()
     assert (tmp_path / "src/app/page.tsx").exists()
     assert (tmp_path / "src/app/globals.css").exists()
-    assert (tmp_path / "src/__tests__/smoke.test.tsx").exists()
+    assert (tmp_path / "src/__tests__/smoke.test.ts").exists()
 
 
 def test_scaffold_creates_placeholder_dirs(tmp_path):
@@ -225,6 +227,14 @@ def test_payload_config_references_database_uri(tmp_path):
     assert "postgresAdapter" in content
 
 
+def test_payload_config_imports_users_with_runtime_safe_extension(tmp_path):
+    write_scaffold(tmp_path, _payload_spec())
+
+    content = (tmp_path / "src/payload.config.ts").read_text()
+    assert './collections/Users.ts' in content
+    assert './collections/Users";' not in content
+
+
 def test_payload_next_config_uses_with_payload(tmp_path):
     write_scaffold(tmp_path, _payload_spec())
 
@@ -239,6 +249,7 @@ def test_payload_tsconfig_has_payload_path(tmp_path):
     paths = tsconfig["compilerOptions"]["paths"]
 
     assert "@payload-config" in paths
+    assert tsconfig["compilerOptions"]["allowImportingTsExtensions"] is True
 
 
 def test_payload_cms_variant_also_works(tmp_path):
@@ -434,7 +445,7 @@ def test_package_json_has_required_scripts(tmp_path):
     assert "test" in scripts
     assert "typecheck" in scripts
     assert scripts["lint"] == "eslint ."
-    assert scripts["test"] == "tsx --tsconfig tsconfig.test.json --test src/**/*.test.ts src/**/*.test.tsx"
+    assert scripts["test"] == "vitest run"
 
 
 def test_package_json_slug_and_name(tmp_path):
@@ -457,7 +468,8 @@ def test_package_json_has_base_deps(tmp_path):
     assert "typescript" in pkg["devDependencies"]
     assert "tailwindcss" in pkg["devDependencies"]
     assert "@eslint/eslintrc" in pkg["devDependencies"]
-    assert "tsx" in pkg["devDependencies"]
+    assert "vitest" in pkg["devDependencies"]
+    assert "tsx" not in pkg["devDependencies"]
 
 
 def test_tsconfig_includes_next_plugin_and_generated_types(tmp_path):
@@ -469,13 +481,15 @@ def test_tsconfig_includes_next_plugin_and_generated_types(tmp_path):
     assert ".next/types/**/*.ts" in tsconfig["include"]
 
 
-def test_tsconfig_test_switches_to_react_jsx(tmp_path):
+def test_vitest_config_targets_generated_smoke_tests(tmp_path):
     write_scaffold(tmp_path, _make_spec())
 
-    tsconfig = json.loads((tmp_path / "tsconfig.test.json").read_text())
+    content = (tmp_path / "vitest.config.ts").read_text()
 
-    assert tsconfig["extends"] == "./tsconfig.json"
-    assert tsconfig["compilerOptions"]["jsx"] == "react-jsx"
+    assert 'defineConfig' in content
+    assert 'environment: "node"' in content
+    assert 'src/**/*.test.ts' in content
+    assert 'passWithNoTests: false' in content
 
 
 def test_eslint_config_uses_eslintrc_compat(tmp_path):
@@ -491,11 +505,12 @@ def test_eslint_config_uses_eslintrc_compat(tmp_path):
 def test_smoke_test_renders_project_title(tmp_path):
     write_scaffold(tmp_path, _make_spec())
 
-    content = (tmp_path / "src/__tests__/smoke.test.tsx").read_text()
+    content = (tmp_path / "src/__tests__/smoke.test.ts").read_text()
 
     assert 'renderToStaticMarkup' in content
     assert 'Test Project' in content
     assert 'typeof Home' in content
+    assert 'from "vitest"' in content
 
 
 # -------------------------------------------------------

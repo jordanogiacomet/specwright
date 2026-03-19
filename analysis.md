@@ -1,8 +1,13 @@
 # Specwright — Full Repository Analysis
 
 **Date**: 2026-03-18 (updated 2026-03-19)
-**Test suite**: 311/311 passed — 137 new tests added across 6 sessions
+**Test suite**: 320/320 passed — 146 new tests added across 6 sessions
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow), `output/editorial-control-center` (Payload editorial)
+
+### Handoff For Future Agents
+
+If context was compacted or you are resuming this work later, read this file first before touching the codebase. It is the current source of truth for what was fixed, what is still in flight, and which validations already ran.
+When the main agent makes code changes, record the new state here before moving on so the next pass can resume from this file instead of reconstructing context from scratch.
 
 ### Resolution Status
 
@@ -50,6 +55,54 @@
 | BUG-014 | FIXED | Payload `not-found.tsx` had unused imports and missing `params`/`searchParams` props — lint warnings and type error |
 
 ---
+
+## Session 6 — Pipeline Reliability Contract (Completed, 2026-03-19)
+
+### What has already been implemented
+
+1. **Shared validation contract**
+   - Added `initializer/engine/validation_contract.py` as the single source of truth for ecosystem detection, command derivation, runner detection, and validation policy.
+   - The contract now carries `commands`, `setup`, `notes`, and a stable `validation` block with `ecosystem`, `test_runner`, `requires_real_tests`, `block_on`, and `warn_on`.
+
+2. **prepare now reconstructs the real contract**
+   - `initializer/flow/prepare_project.py` now detects the project's actual command/validation state from files on disk instead of re-deriving a partial commands map.
+   - The generated `.openclaw/commands.json` is meant to remain consistent after `prepare`.
+
+3. **OpenClaw bundle now uses the shared contract**
+   - `initializer/renderers/openclaw_bundle.py` and `initializer/engine/commands_engine.py` now route through the same contract helper instead of maintaining parallel command logic.
+   - `.openclaw/commands.json` now includes a `validation` block, not just plain commands.
+
+4. **Node scaffold moved to Vitest**
+   - `initializer/renderers/scaffold_engine.py` now generates `vitest run` as the test script, adds `vitest` to devDependencies, writes `vitest.config.ts`, and emits `src/__tests__/smoke.test.ts`.
+   - The scaffold is no longer centered on `tsx --test`/`tsconfig.test.json` as the default testing path.
+
+5. **ralph.sh now reads the validation contract from commands.json**
+   - `initializer/renderers/codex_bundle.py` now loads `test`, `lint`, `build`, `typecheck`, `test_runner`, and `requires_real_tests` from `.openclaw/commands.json` at runtime instead of hardcoded Node validation commands.
+   - Validation now respects `validation.block_on` / `validation.warn_on`, and a missing or placeholder test runner fails when `requires_real_tests=true`.
+
+6. **Story engine bootstrap wording is stack-aware**
+   - `initializer/engine/story_engine.py` now uses the shared validation contract to derive bootstrap runner expectations and validation commands.
+   - The bootstrap repository story now uses Vitest-specific wording for Node and generic runner-aware wording for Python and Go.
+
+7. **Unit coverage was updated for the new contract**
+   - `tests/unit/test_scaffold_engine.py` now validates the Vitest scaffold (`vitest.config.ts`, `vitest run`, `smoke.test.ts`) and confirms the legacy `tsconfig.test.json` path is gone.
+   - `tests/unit/test_prepare_project.py` now validates the full `{commands, setup, notes, validation}` contract, detects placeholder/no-op test scripts, and covers Python/Go detection plus `prepare -> ralph` alignment.
+   - `tests/unit/test_bundles.py` now checks the `validation` block in `.openclaw/commands.json` and verifies that `ralph.sh` reads validation commands from `commands.json` instead of hardcoded `npm ... --if-present`.
+   - `tests/unit/test_story_engine.py` now validates Node/Python/Go bootstrap wording.
+
+### Validation performed
+
+1. **Focused regression suite**
+   - `.venv/bin/python -m pytest tests/unit/test_scaffold_engine.py tests/unit/test_prepare_project.py tests/unit/test_bundles.py tests/unit/test_story_engine.py -q`
+   - Result: `121 passed`
+
+2. **Full repository suite**
+   - `.venv/bin/python -m pytest -q`
+   - Result: `320 passed in 4.68s`
+
+### Remaining limitation
+
+This session closes the validation/test pipeline contract itself. The separate `payload migrate*` compatibility issue on Node 24 remains a different problem and was not part of this patch.
 
 ## Session 4 — Editorial Validation and Payload v3.79 Compatibility (2026-03-19)
 
@@ -975,18 +1028,20 @@ Remaining without dedicated tests:
 
 ### Current working tree (updated after Session 6)
 
-At the time of this handoff, `git status --short` shows:
+Current repo state:
 
 ```text
+Branch: fix/ralph-evidence
+HEAD: 29f8dca (`new implementations`)
+git status --short:
  M analysis.md
- M initializer/capabilities/cms.py
- M initializer/capabilities/public_site.py
- M initializer/engine/story_engine.py
- ?? tests/unit/test_cms_capability.py
- ?? tests/unit/test_public_site_capability.py
+ M initializer/renderers/codex_bundle.py
+ M initializer/renderers/scaffold_engine.py
+ M tests/unit/test_bundles.py
+ M tests/unit/test_scaffold_engine.py
 ```
 
-All 6 story quality issues from Session 5 have been fixed at the **generator level**. Tests: 311/311 passed. Changes are unstaged — need commit + regenerate editorial-control-center + re-validate.
+All 6 story quality issues from Session 5 remain fixed at the **generator level** and committed. Additional unstaged follow-up fixes were added after real `ralph.sh` execution exposed two more generator/runtime issues.
 
 ### Most relevant validations already run
 
@@ -995,52 +1050,105 @@ All 6 story quality issues from Session 5 have been fixed at the **generator lev
 39 passed in the 3 files directly testing the 6 fixes
 ```
 
-### What still remains valuable to do next
+### Session 6 generator validation completed (2026-03-19)
 
-1. **Commit Session 6 changes** — all 6 generator fixes + 20 new tests.
-
-2. **Regenerate editorial-control-center** — `initializer new --spec examples/next-payload-postgres.input.yaml --output output/editorial-control-center --force` and then `initializer prepare output/editorial-control-center`.
-
-3. **Re-validate** — npm install/test/lint/build on the regenerated project. Verify the new stories appear (public site rendering, enriched content model, etc.).
-
-4. **Run `ralph.sh`** (not `--dry-run`) to execute all stories with Codex.
-
-5. Consider pinning Payload version range in `_payload_package_json()` to avoid future API drift.
-
-### Prompt for Codex
-
-Use this prompt verbatim in Codex:
+Regenerated `output/editorial-control-center` from `examples/next-payload-postgres.input.yaml` using:
 
 ```text
-You are continuing work on the Specwright repository.
-
-Read analysis.md — focus on "Session 6" and "Current Handoff Snapshot".
-
-Context:
-- Branch: fix/ralph-evidence
-- Last commit: 8c944f7. Session 6 changes are unstaged.
-- 311 tests pass. All 6 story quality issues from Session 5 are fixed at generator level.
-
-Session 6 completed (all generator-level fixes):
-1. CMS capability (cms.py): enumerates collections/globals from spec.guided_answers.content_model in acceptance criteria and expected_files
-2. Role normalization (story_engine.py): _get_role_names() pulls roles from spec.answers.guided_answers.roles_and_access.admin_roles; used in feature.roles and feature.draft-publish
-3. Media library (story_engine.py): _get_storage_backend() reads spec storage_requirements; local_filesystem → "use Payload local disk adapter", else → S3
-4. Scheduled publishing (story_engine.py): acceptance criteria now specify node-cron, cron interval, idempotency, logging; scope says no Bull/BullMQ
-5. CDN → static delivery (public_site.py): renamed to "Configure static asset delivery" with story_key "infra.static-delivery"; criteria: Next.js Image, cache headers, no external CDN
-6. Public site rendering (story_engine.py): new story "product.public-site-rendering" when cms + public-site capabilities; enumerates routes from content_model collections (excludes media/authors); depends on draft-publish
-
-New test files:
-- tests/unit/test_cms_capability.py (6 tests)
-- tests/unit/test_public_site_capability.py (5 tests)
-- tests/unit/test_story_engine.py (9 new tests appended)
-
-Your tasks:
-1. Stage and commit all Session 6 changes (cms.py, public_site.py, story_engine.py, test files, analysis.md)
-2. Regenerate editorial-control-center: `python -m initializer new --spec examples/next-payload-postgres.input.yaml --output output/editorial-control-center --force`
-3. Run `python -m initializer prepare output/editorial-control-center`
-4. Validate: cd into the generated project and run npm install, npm test, npm run lint, npm run build
-5. Verify the new stories appear in the generated spec.json (search for "public-site-rendering", "static-delivery", collection names in content model story)
-6. If validation passes, update analysis.md with Session 6 validation results
-
-Do not restart from scratch. Build directly on the current state.
+.venv/bin/python -m initializer new --spec examples/next-payload-postgres.input.yaml
+.venv/bin/python -m initializer prepare output/editorial-control-center
 ```
+
+Observed generated story changes:
+
+- ST-001 now enumerates collections `pages`, `posts`, `authors`, `media` and globals `site-settings`, `homepage`
+- ST-002 is now `Configure static asset delivery` with story key `infra.static-delivery`
+- ST-009 now explicitly uses Payload local disk adapter / local filesystem storage
+- ST-012 now specifies `node-cron`, configurable interval, logging, retry behavior, and idempotency
+- ST-013 now exists: `Implement public site pages` with routes for `/pages/[slug]` and `/posts/[slug]`
+
+Real generated-project validation on regenerated `editorial-control-center`:
+
+```text
+npm install     PASS
+npm test        PASS (required unsandboxed rerun because tsx IPC pipe creation hit EPERM inside sandbox)
+npm run lint    PASS
+npm run build   PASS
+```
+
+Build output included:
+
+```text
+Route (app)
+○ /
+○ /_not-found
+ƒ /admin/[[...segments]]
+```
+
+### Ralph execution follow-up (2026-03-19)
+
+After the regenerated project passed install/test/lint/build, `./ralph.sh` was run outside the sandbox to validate real Codex execution.
+
+New fixes added at generator level before the real run:
+
+- `initializer/renderers/codex_bundle.py`
+  - `ralph.sh` now uses installed `codex exec` instead of `npx -y @openai/codex@latest exec`
+  - this removed the network/DNS blocker that previously failed on ST-003 before any real implementation work
+- `initializer/renderers/scaffold_engine.py`
+  - Payload scaffold now imports `Users` via `./collections/Users.ts`
+  - Payload scaffold tsconfig now enables `allowImportingTsExtensions`
+- tests added/updated:
+  - `tests/unit/test_bundles.py`
+  - `tests/unit/test_scaffold_engine.py`
+  - focused regression suite: `84 passed`
+
+Real `ralph.sh` results:
+
+```text
+ST-003 — DONE
+ST-004 — START, then interrupted manually after confirming the loop progressed
+```
+
+What ST-003 proved:
+
+- Codex can now run from `ralph.sh` without the previous `@openai/codex` network install failure
+- The generated project can be modified by Codex and validated end-to-end inside the loop
+- ST-003 completed with:
+  - `npm install`
+  - `npm run lint`
+  - `npm test`
+  - `npm run typecheck`
+  - `npm run build`
+
+Remaining runtime issue found during `ralph`:
+
+- Payload migration commands still emit a warning on Node `v24.11.1`:
+
+```text
+ERR_REQUIRE_ASYNC_MODULE
+require() cannot be used on an ESM graph with top-level await
+Requiring .../src/payload.config.ts
+```
+
+- This does **not** currently stop `ralph.sh`, because `run_migrations()` already downgrades migration command failures to `WARN`.
+- It does remain a real product issue for Payload-based projects because manual `payload migrate`, `payload migrate:create`, and `payload migrate:status` are not reliable yet in this environment.
+
+### What still remains valuable to do next
+
+1. **Commit the new generator follow-up fixes**:
+   - `initializer/renderers/codex_bundle.py`
+   - `initializer/renderers/scaffold_engine.py`
+   - `tests/unit/test_bundles.py`
+   - `tests/unit/test_scaffold_engine.py`
+   - `analysis.md`
+
+2. **Fix Payload migration CLI compatibility on Node 24** so `npx payload migrate*` works reliably from generated projects and from `ralph.sh`.
+
+3. **Resume `./ralph.sh --from ST-004`** after the migration/runtime issue is addressed, or continue if accepting migration warnings for now.
+
+4. Add a targeted validation for the new public routes after story execution:
+   - `/pages/[slug]`
+   - `/posts/[slug]`
+   - draft content returns `404`
+
+5. Consider pinning Payload version range in `_payload_package_json()` to reduce future API drift.

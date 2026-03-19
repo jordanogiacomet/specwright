@@ -409,8 +409,38 @@ def test_bootstrap_repo_requires_test_framework():
     stories = generate_stories(spec)
     repo = next(s for s in stories if s.get("story_key") == "bootstrap.repository")
     criteria = " ".join(repo["acceptance_criteria"])
-    assert "vitest" in criteria.lower() or "jest" in criteria.lower()
+    assert "vitest" in criteria.lower()
     assert "npm test" in " ".join(repo["validation"]["commands"])
+
+
+def test_bootstrap_repo_python_uses_stack_aware_runner_language():
+    spec = {
+        "stack": {"frontend": "", "backend": "django", "database": "postgres"},
+        "features": [],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    repo = next(s for s in stories if s.get("story_key") == "bootstrap.repository")
+    criteria = " ".join(repo["acceptance_criteria"]).lower()
+
+    assert "pytest" in criteria
+    assert "package.json" not in criteria
+    assert "pytest" in " ".join(repo["validation"]["commands"])
+
+
+def test_bootstrap_repo_go_uses_stack_aware_runner_language():
+    spec = {
+        "stack": {"frontend": "", "backend": "gin", "database": "postgres"},
+        "features": [],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    repo = next(s for s in stories if s.get("story_key") == "bootstrap.repository")
+    criteria = " ".join(repo["acceptance_criteria"]).lower()
+
+    assert "go test" in criteria
+    assert "package.json" not in criteria
+    assert "go test ./..." in " ".join(repo["validation"]["commands"])
 
 
 # -------------------------------------------------------

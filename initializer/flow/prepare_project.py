@@ -20,6 +20,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from initializer.engine.validation_contract import detect_validation_bundle
 from initializer.renderers.codex_bundle import write_codex_bundle
 from initializer.renderers.openclaw_bundle import write_openclaw_bundle
 
@@ -354,70 +355,8 @@ def _build_consolidated_prd(spec: dict[str, Any]) -> str:
 # -------------------------------------------------------
 
 def _detect_commands(project_dir: Path, spec: dict[str, Any]) -> dict[str, Any]:
-    """Detect available validation commands based on stack and project files."""
-    stack = spec.get("stack", {})
-    frontend = stack.get("frontend", "")
-    backend = stack.get("backend", "")
-
-    commands = {
-        "test": "",
-        "lint": "",
-        "build": "",
-        "dev": "",
-    }
-    notes: list[str] = []
-
-    # Check if package.json exists (Node.js project)
-    if (project_dir / "package.json").exists():
-        try:
-            pkg = json.loads((project_dir / "package.json").read_text(encoding="utf-8"))
-            scripts = pkg.get("scripts", {})
-
-            if "test" in scripts:
-                commands["test"] = "npm test"
-            if "lint" in scripts:
-                commands["lint"] = "npm run lint"
-            if "build" in scripts:
-                commands["build"] = "npm run build"
-            if "dev" in scripts:
-                commands["dev"] = "npm run dev"
-
-            notes.append("Commands detected from project files.")
-            return {
-                "commands": commands,
-                "notes": notes,
-            }
-        except (json.JSONDecodeError, OSError):
-            notes.append(
-                "package.json exists but could not be parsed. "
-                "Falling back to stack-based defaults."
-            )
-
-    # Suggest commands based on stack (pre-bootstrap)
-    if frontend == "nextjs" or backend in ("node-api", "payload"):
-        commands["test"] = "npm test"
-        commands["lint"] = "npm run lint"
-        commands["build"] = "npm run build"
-        commands["dev"] = "npm run dev"
-    elif (project_dir / "pyproject.toml").exists():
-        commands["test"] = "pytest"
-        commands["lint"] = "ruff check ."
-        commands["build"] = ""
-        commands["dev"] = ""
-
-    if not (project_dir / "package.json").exists() and not (project_dir / "pyproject.toml").exists():
-        notes.append(
-            "No package.json or pyproject.toml found. "
-            "Commands are based on the planned stack. "
-            "Update after bootstrap phase."
-        )
-    else:
-        notes.append("Commands detected from project files.")
-
-    return {
-        "commands": commands,
-        "notes": notes,
-    }
+    """Detect available validation commands + contract based on project files."""
+    return detect_validation_bundle(project_dir, spec)
 
 
 # -------------------------------------------------------

@@ -20,6 +20,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from initializer.engine.validation_contract import build_validation_bundle
+
 
 def _get_decision_signals(spec: dict[str, Any]) -> dict[str, Any]:
     discovery = spec.get("discovery", {})
@@ -360,45 +362,8 @@ def _fallback_commands() -> dict[str, Any]:
 
 
 def generate_commands(spec: dict[str, Any]) -> dict[str, Any]:
-    """Generate commands dict from the project spec.
-
-    Returns a dict with:
-    - commands: validation and dev commands the executor should use
-    - setup: one-time setup commands to bootstrap the project
-    - notes: guidance for the executor
-    """
-    stack = spec.get("stack", {})
-    answers = spec.get("answers", {})
-    capabilities = spec.get("capabilities", [])
-    deploy_target = answers.get("deploy_target", "docker")
-
-    ecosystem = _detect_ecosystem(stack)
-
-    if ecosystem == "node":
-        result = _node_commands(stack, capabilities, deploy_target)
-    elif ecosystem == "python":
-        result = _python_commands(stack, capabilities, deploy_target)
-    elif ecosystem == "go":
-        result = _go_commands(stack, capabilities, deploy_target)
-    else:
-        result = _fallback_commands()
-
-    notes: list[str] = [
-        "These commands are pre-populated from the project stack. "
-        "Update them if the actual project setup differs.",
-        "Run 'build' and 'lint' after every story. "
-        "Run 'test' when test files exist.",
-        "Run 'typecheck' periodically to catch type errors early.",
-    ]
-
-    if "scheduled-jobs" in capabilities:
-        notes.append(
-            "The 'jobs' command starts the background job runner. "
-            "Configure it after implementing the automation story."
-        )
-
-    result["notes"] = notes
-    return result
+    """Generate commands + validation contract from the project spec."""
+    return build_validation_bundle(spec)
 
 
 # -------------------------------------------------------------------

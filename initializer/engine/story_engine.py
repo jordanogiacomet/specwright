@@ -16,6 +16,8 @@ Key improvements in this version:
 - Draft-publish story when feature is present
 """
 
+from initializer.engine.validation_contract import build_validation_bundle, detect_ecosystem, expected_test_runner
+
 
 def _merge_story(existing_story, generated_story):
     merged = dict(existing_story)
@@ -197,6 +199,117 @@ def generate_stories(spec):
     backend = stack.get("backend", "node-api")
     frontend = stack.get("frontend", "nextjs")
     database = stack.get("database", "postgres")
+    validation_bundle = build_validation_bundle(spec)
+    validation_commands = validation_bundle.get("commands", {})
+    ecosystem = detect_ecosystem(stack)
+    runner_label = expected_test_runner(spec)
+
+    bootstrap_validation_commands = []
+    install_cmd = validation_bundle.get("setup", {}).get("install")
+    if install_cmd:
+        bootstrap_validation_commands.append(install_cmd)
+    for key in ("build", "lint", "test"):
+        cmd = validation_commands.get(key)
+        if cmd:
+            bootstrap_validation_commands.append(cmd)
+
+    install_criteria = f"{install_cmd} completes without errors" if install_cmd else "Dependency installation completes without errors"
+    build_cmd = validation_commands.get("build")
+    test_cmd = validation_commands.get("test")
+    build_criteria = f"{build_cmd} passes" if build_cmd else "Build passes"
+    test_criteria = f"{test_cmd} passes (must not be a no-op)" if test_cmd else "Test command passes (must not be a no-op)"
+
+    if ecosystem == "node":
+        repository_manifest_criteria = "package.json exists with scripts: dev, build, lint, test, typecheck"
+        repository_tooling_criteria = "TypeScript is configured with tsconfig.json"
+        repository_lint_criteria = "ESLint and Prettier are configured"
+        test_framework_criteria = "Vitest is installed and configured so that `npm test` runs a real test runner, not a no-op"
+        smoke_test_criteria = "At least one smoke test exists (e.g. a test that imports the app config and asserts it loads)"
+        repository_expected_files = [
+            "package.json",
+            "tsconfig.json",
+            ".eslintrc.js or eslint.config.js",
+            ".env.example",
+            ".env.local",
+            ".gitignore",
+            "README.md",
+            "vitest.config.ts",
+            "src/__tests__/smoke.test.ts",
+        ]
+        repository_scope_boundaries = [
+            "Do NOT implement any features yet — this is project scaffolding only",
+            "Do NOT add authentication, roles, or any business logic",
+            "Do NOT create database tables — that is a separate story",
+            "Do NOT create files in src/pages/ — this project uses the App Router (src/app/) exclusively",
+            "Use environment variable names exactly as defined in .env.example — do NOT rename or create alternatives",
+        ]
+        repository_manual_check = "Project directory exists with expected structure; npm test runs a real test suite"
+    elif ecosystem == "python":
+        repository_manifest_criteria = "pyproject.toml or requirements.txt exists with install, test, lint, and typecheck commands documented"
+        repository_tooling_criteria = "Python project tooling is configured for local development"
+        repository_lint_criteria = "Linting and formatting tooling are configured for the Python stack"
+        test_framework_criteria = (
+            f"{runner_label} is installed and configured so that the test command runs a real test runner, not a no-op"
+        )
+        smoke_test_criteria = "At least one Python smoke test exists for bootstrap validation"
+        repository_expected_files = [
+            "pyproject.toml or requirements.txt",
+            ".env.example",
+            ".gitignore",
+            "README.md",
+            "At least one real smoke test file for the ecosystem",
+        ]
+        repository_scope_boundaries = [
+            "Do NOT implement any features yet — this is project scaffolding only",
+            "Do NOT add authentication, roles, or any business logic",
+            "Do NOT create database tables — that is a separate story",
+            "Use environment variable names exactly as defined in .env.example — do NOT rename or create alternatives",
+        ]
+        repository_manual_check = "Project directory exists with expected structure; pytest runs a real test suite"
+    elif ecosystem == "go":
+        repository_manifest_criteria = "go.mod exists and the module layout is initialized"
+        repository_tooling_criteria = "Go tooling is configured for local development and validation"
+        repository_lint_criteria = "Linting and vet tooling are configured for the Go stack"
+        test_framework_criteria = (
+            f"{runner_label} is configured so that the test command runs a real test runner, not a no-op"
+        )
+        smoke_test_criteria = "At least one Go smoke test exists for bootstrap validation"
+        repository_expected_files = [
+            "go.mod",
+            ".env.example",
+            ".gitignore",
+            "README.md",
+            "At least one real smoke test file for the ecosystem",
+        ]
+        repository_scope_boundaries = [
+            "Do NOT implement any features yet — this is project scaffolding only",
+            "Do NOT add authentication, roles, or any business logic",
+            "Do NOT create database tables — that is a separate story",
+            "Use environment variable names exactly as defined in .env.example — do NOT rename or create alternatives",
+        ]
+        repository_manual_check = "Project directory exists with expected structure; go test ./... runs a real test suite"
+    else:
+        repository_manifest_criteria = "Project manifest exists with install, test, lint, and build commands documented"
+        repository_tooling_criteria = "Project tooling is configured for local development"
+        repository_lint_criteria = "Linting and formatting tooling are configured"
+        test_framework_criteria = (
+            f"A test framework is installed and configured ({runner_label}) so that the test command runs a real test runner, not a no-op"
+        )
+        smoke_test_criteria = "At least one real smoke test file exists for the ecosystem"
+        repository_expected_files = [
+            "Project manifest",
+            ".env.example",
+            ".gitignore",
+            "README.md",
+            "At least one real smoke test file for the ecosystem",
+        ]
+        repository_scope_boundaries = [
+            "Do NOT implement any features yet — this is project scaffolding only",
+            "Do NOT add authentication, roles, or any business logic",
+            "Do NOT create database tables — that is a separate story",
+            "Use environment variable names exactly as defined in .env.example — do NOT rename or create alternatives",
+        ]
+        repository_manual_check = "Project directory exists with expected structure; the configured test command runs a real test suite"
 
     counter = 1
     for story in stories:
@@ -257,39 +370,23 @@ def generate_stories(spec):
         "Initialize project repository",
         f"Create project structure using {frontend} + {backend} + {database}.",
         acceptance_criteria=[
-            "package.json exists with scripts: dev, build, lint, test, typecheck",
+            repository_manifest_criteria,
             ".env.example exists with all required environment variables",
             ".env.local is already generated by the scaffold with working defaults — do NOT overwrite it",
-            "TypeScript is configured with tsconfig.json",
-            "ESLint and Prettier are configured",
-            "A test framework is installed and configured (vitest recommended) so that `npm test` runs a real test runner, not a no-op",
-            "At least one smoke test exists (e.g. a test that imports the app config and asserts it loads)",
-            "npm install completes without errors",
-            "npm run build passes",
-            "npm test passes (must not be a no-op)",
+            repository_tooling_criteria,
+            repository_lint_criteria,
+            test_framework_criteria,
+            smoke_test_criteria,
+            install_criteria,
+            build_criteria,
+            test_criteria,
         ],
-        scope_boundaries=[
-            "Do NOT implement any features yet — this is project scaffolding only",
-            "Do NOT add authentication, roles, or any business logic",
-            "Do NOT create database tables — that is a separate story",
-            "Do NOT create files in src/pages/ — this project uses the App Router (src/app/) exclusively",
-            "Use environment variable names exactly as defined in .env.example — do NOT rename or create alternatives",
-        ],
-        expected_files=[
-            "package.json",
-            "tsconfig.json",
-            ".eslintrc.js or eslint.config.js",
-            ".env.example",
-            ".env.local",
-            ".gitignore",
-            "README.md",
-            "vitest.config.ts or jest.config.ts",
-            "src/__tests__/smoke.test.ts",
-        ],
+        scope_boundaries=repository_scope_boundaries,
+        expected_files=repository_expected_files,
         depends_on=[],
         validation=_validation(
-            commands=["npm install", "npm run build", "npm run lint", "npm test"],
-            manual_check="Project directory exists with expected structure; npm test runs a real test suite",
+            commands=bootstrap_validation_commands,
+            manual_check=repository_manual_check,
         ),
     )
 

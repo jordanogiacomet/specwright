@@ -280,6 +280,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLAN_FILE="$SCRIPT_DIR/.openclaw/execution-plan.json"
+COMMANDS_FILE="$SCRIPT_DIR/.openclaw/commands.json"
 PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
 STORIES_DIR="$SCRIPT_DIR/docs/stories"
 MIGRATION_CMD="{migration_cmd}"
@@ -330,6 +331,12 @@ if [[ ! -f "$PLAN_FILE" ]]; then
     exit 1
 fi
 
+if [[ ! -f "$COMMANDS_FILE" ]]; then
+    echo "Error: commands.json not found at $COMMANDS_FILE"
+    echo "Run 'initializer prepare' first to generate the execution bundle."
+    exit 1
+fi
+
 # -------------------------------------------------------
 # Auth check
 # -------------------------------------------------------
@@ -349,6 +356,56 @@ if [[ "$DRY_RUN" == false ]]; then
     echo "Auth: OK (Codex CLI installed — uses your logged-in account)"
     echo ""
 fi
+
+TEST_CMD=$(jq -r '.commands.test // ""' "$COMMANDS_FILE")
+LINT_CMD=$(jq -r '.commands.lint // ""' "$COMMANDS_FILE")
+BUILD_CMD=$(jq -r '.commands.build // ""' "$COMMANDS_FILE")
+TYPECHECK_CMD=$(jq -r '.commands.typecheck // ""' "$COMMANDS_FILE")
+TEST_RUNNER=$(jq -r '.validation.test_runner // "none"' "$COMMANDS_FILE")
+REQUIRES_REAL_TESTS=$(jq -r '.validation.requires_real_tests // false' "$COMMANDS_FILE")
+
+validation_policy_contains() {{
+    local field="$1"
+    local command_name="$2"
+    jq -e --arg field "$field" --arg command_name "$command_name" \
+        '.validation[$field] // [] | index($command_name)' \
+        "$COMMANDS_FILE" >/dev/null 2>&1
+}}
+
+append_validation_error() {{
+    local label="$1"
+    local output="$2"
+    local message
+
+    message="$label failure: $(echo "$output" | tail -20)"
+    if [[ -n "$VALIDATION_ERRORS" ]]; then
+        VALIDATION_ERRORS="$VALIDATION_ERRORS | $message"
+    else
+        VALIDATION_ERRORS="$message"
+    fi
+}}
+
+run_validation_command() {{
+    local label="$1"
+    local command="$2"
+    local pretty="$3"
+    local output=""
+
+    if [[ -z "$command" ]]; then
+        echo "$pretty: SKIP"
+        return 0
+    fi
+
+    if ! output=$(eval "$command" 2>&1); then
+        echo "$pretty: FAIL"
+        if validation_policy_contains "block_on" "$label"; then
+            VALIDATION_OK=false
+            append_validation_error "$pretty" "$output"
+        fi
+    else
+        echo "$pretty: PASS"
+    fi
+}}
 
 # -------------------------------------------------------
 # Migration runner
@@ -468,8 +525,8 @@ After implementation, run available validation commands (test, lint, build).
 If no commands exist yet, note that in your response.
 PROMPT_EOF
 
-    # Run Codex via npx
-    npx -y @openai/codex@latest exec \\
+    # Run Codex via installed CLI
+    codex exec \\
         --model "$CODEX_MODEL" \\
         --config 'model_reasoning_effort="xhigh"' \\
         --sandbox danger-full-access \\
@@ -553,8 +610,8 @@ If the error is about missing tables or columns ("relation does not exist"):
 After fixing, run: test, lint, build.
 PROMPT_EOF
 
-    # Run Codex via npx
-    npx -y @openai/codex@latest exec \\
+    # Run Codex via installed CLI
+    codex exec \\
         --model "$CODEX_MODEL" \\
         --config 'model_reasoning_effort="xhigh"' \\
         --sandbox danger-full-access \\
@@ -702,72 +759,38 @@ for i in $(seq 0 $(( TOTAL - 1 ))); do
         # -------------------------------------------------------
         VALIDATION_OK=true
         VALIDATION_ERRORS=""
+        echo "Running validation..."
 
-        if [[ -f "$SCRIPT_DIR/package.json" ]]; then
-            echo "Running validation..."
-
-            TEST_OUTPUT=""
-            if ! TEST_OUTPUT=$(npm test --if-present 2>&1); then
+        if [[ "$REQUIRES_REAL_TESTS" == "true" ]] && validation_policy_contains "block_on" "test"; then
+            if [[ -z "$TEST_CMD" ]] || [[ "$TEST_RUNNER" == "none" ]]; then
                 echo "Tests: FAIL"
                 VALIDATION_OK=false
-                VALIDATION_ERRORS="Test failure: $(echo "$TEST_OUTPUT" | tail -20)"
+                append_validation_error "Tests" "No real test runner is configured in .openclaw/commands.json"
             else
-                echo "Tests: PASS"
+                run_validation_command "test" "$TEST_CMD" "Tests"
             fi
+        else
+            run_validation_command "test" "$TEST_CMD" "Tests"
+        fi
 
-            LINT_OUTPUT=""
-            if ! LINT_OUTPUT=$(npm run lint --if-present 2>&1); then
-                echo "Lint: FAIL"
-                # Lint failures are warnings, don't block
-            else
-                echo "Lint: PASS"
-            fi
+        run_validation_command "lint" "$LINT_CMD" "Lint"
+        run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck"
+        run_validation_command "build" "$BUILD_CMD" "Build"
 
-            # Typecheck catches import mismatches (named vs default) that
-            # next build may miss because SWC does not enforce TS2613.
-            TYPECHECK_OUTPUT=""
-            if node -e "const p=require('./package.json'); if(!p.scripts?.typecheck) process.exit(1)" 2>/dev/null; then
-                if ! TYPECHECK_OUTPUT=$(npm run typecheck 2>&1); then
-                    echo "Typecheck: FAIL"
-                    VALIDATION_OK=false
-                    if [[ -n "$VALIDATION_ERRORS" ]]; then
-                        VALIDATION_ERRORS="$VALIDATION_ERRORS | Typecheck failure: $(echo "$TYPECHECK_OUTPUT" | tail -20)"
-                    else
-                        VALIDATION_ERRORS="Typecheck failure: $(echo "$TYPECHECK_OUTPUT" | tail -20)"
-                    fi
-                else
-                    echo "Typecheck: PASS"
+        # Orphan route detection: warn about pages outside [locale]/
+        # that would be intercepted by i18n middleware redirects.
+        if [[ -f "$SCRIPT_DIR/middleware.ts" ]] && grep -q "locale" "$SCRIPT_DIR/middleware.ts" 2>/dev/null; then
+            ORPHANS=""
+            while IFS= read -r route_file; do
+                # Derive URL path: strip src/app prefix, remove route groups (parenthesized dirs)
+                url_path=$(echo "$route_file" | sed 's|^src/app/||' | sed 's|/page[.]tsx$||' | sed 's|([^/]*)/||g')
+                if [[ -n "$url_path" ]]; then
+                    ORPHANS="$ORPHANS  - $route_file -> /$url_path (unreachable — middleware redirects to /[locale]/$url_path)\\n"
                 fi
-            fi
-
-            BUILD_OUTPUT=""
-            if ! BUILD_OUTPUT=$(npm run build 2>&1); then
-                echo "Build: FAIL"
-                VALIDATION_OK=false
-                if [[ -n "$VALIDATION_ERRORS" ]]; then
-                    VALIDATION_ERRORS="$VALIDATION_ERRORS | Build failure: $(echo "$BUILD_OUTPUT" | tail -20)"
-                else
-                    VALIDATION_ERRORS="Build failure: $(echo "$BUILD_OUTPUT" | tail -20)"
-                fi
-            else
-                echo "Build: PASS"
-            fi
-
-            # Orphan route detection: warn about pages outside [locale]/
-            # that would be intercepted by i18n middleware redirects.
-            if [[ -f "$SCRIPT_DIR/middleware.ts" ]] && grep -q "locale" "$SCRIPT_DIR/middleware.ts" 2>/dev/null; then
-                ORPHANS=""
-                while IFS= read -r route_file; do
-                    # Derive URL path: strip src/app prefix, remove route groups (parenthesized dirs)
-                    url_path=$(echo "$route_file" | sed 's|^src/app/||' | sed 's|/page[.]tsx$||' | sed 's|([^/]*)/||g')
-                    if [[ -n "$url_path" ]]; then
-                        ORPHANS="$ORPHANS  - $route_file -> /$url_path (unreachable — middleware redirects to /[locale]/$url_path)\\n"
-                    fi
-                done < <(find "$SCRIPT_DIR/src/app" -name "page.tsx" -not -path "*/\\[locale\\]/*" -not -path "*/api/*" -not -path "*/_*" 2>/dev/null | sed "s|^$SCRIPT_DIR/||" | grep -v "^src/app/page.tsx$")
-                if [[ -n "$ORPHANS" ]]; then
-                    echo "Orphan routes: WARN"
-                    echo -e "  Possible orphan routes (middleware redirects these):\\n$ORPHANS"
-                fi
+            done < <(find "$SCRIPT_DIR/src/app" -name "page.tsx" -not -path "*/\\[locale\\]/*" -not -path "*/api/*" -not -path "*/_*" 2>/dev/null | sed "s|^$SCRIPT_DIR/||" | grep -v "^src/app/page.tsx$")
+            if [[ -n "$ORPHANS" ]]; then
+                echo "Orphan routes: WARN"
+                echo -e "  Possible orphan routes (middleware redirects these):\\n$ORPHANS"
             fi
         fi
 
