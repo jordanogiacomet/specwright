@@ -135,7 +135,7 @@ def _env_example(spec: dict[str, Any]) -> str:
 
     lines = [
         f"# Environment variables for {_name(spec)}",
-        f"# Copy to .env.local: cp .env.example .env.local",
+        f"# .env.local is auto-generated — edit it for local overrides",
         "",
     ]
 
@@ -279,6 +279,27 @@ def _package_json(spec: dict[str, Any]) -> str:
         pkg["dependencies"]["helmet"] = "^7"
         pkg["devDependencies"]["@types/express"] = "^4"
         pkg["devDependencies"]["@types/cors"] = "^2"
+
+    # Add node-pg-migrate for non-Payload postgres projects
+    db = _database(spec)
+    if not is_payload and db == "postgres":
+        pkg["dependencies"]["node-pg-migrate"] = "^8"
+        pkg["dependencies"]["pg"] = "^8"
+        pkg["scripts"]["db:migrate"] = (
+            "node-pg-migrate up --migrations-dir src/lib/migrations "
+            "--migration-file-language cjs "
+            "--template-file-name src/lib/migration-template.cjs "
+            "--envPath .env.local"
+        )
+        pkg["scripts"]["db:migrate:create"] = (
+            "node-pg-migrate create --migrations-dir src/lib/migrations "
+            "--migration-file-language cjs "
+            "--template-file-name src/lib/migration-template.cjs"
+        )
+        pkg["scripts"]["db:migrate:status"] = (
+            "node-pg-migrate up --migrations-dir src/lib/migrations "
+            "--envPath .env.local --dry-run"
+        )
 
     return json.dumps(pkg, indent=2) + "\n"
 
@@ -537,6 +558,29 @@ export const importMap = {};
 
 
 # -------------------------------------------------------------------
+# Migration template (node-pg-migrate)
+# -------------------------------------------------------------------
+
+def _migration_template() -> str:
+    """Custom migration template that uses _pgm to avoid unused-parameter lint warnings."""
+    return """/**
+ * @type {import('node-pg-migrate').ColumnDefinitions | undefined}
+ */
+exports.shorthands = undefined;
+
+/**
+ * @param {import('node-pg-migrate').MigrationBuilder} _pgm
+ */
+exports.up = (_pgm) => {};
+
+/**
+ * @param {import('node-pg-migrate').MigrationBuilder} _pgm
+ */
+exports.down = (_pgm) => {};
+"""
+
+
+# -------------------------------------------------------------------
 # Dockerfile
 # -------------------------------------------------------------------
 
@@ -596,10 +640,7 @@ npm install
 # 2. Start database
 docker compose up -d
 
-# 3. Set up environment
-cp .env.example .env.local
-
-# 4. Run dev server
+# 3. Run dev server (`.env.local` is already generated)
 npm run dev
 ```
 
@@ -642,7 +683,6 @@ def write_scaffold(output_dir: Path, spec: dict[str, Any]) -> None:
     After this runs, the project can be started with:
         npm install
         docker compose up -d
-        cp .env.example .env.local
         npm run dev
     """
     is_payload = _is_payload(spec)
@@ -679,6 +719,10 @@ def write_scaffold(output_dir: Path, spec: dict[str, Any]) -> None:
         _write(output_dir, "src/app/(payload)/layout.tsx", _payload_layout())
         _write(output_dir, "src/app/(payload)/custom.scss", _payload_custom_scss())
         _write(output_dir, "src/app/(payload)/importMap.ts", _payload_import_map())
+
+    # --- Migration template for node-pg-migrate (non-Payload postgres) ---
+    if not is_payload and _database(spec) == "postgres":
+        _write(output_dir, "src/lib/migration-template.cjs", _migration_template())
 
     # --- Lib placeholder ---
     _write(output_dir, "src/lib/.gitkeep", "")

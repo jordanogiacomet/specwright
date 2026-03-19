@@ -50,7 +50,7 @@ def generate_commands(spec: dict[str, Any]) -> dict[str, Any]:
         else:
             setup["db_start"] = "# Start PostgreSQL manually or via cloud provider"
 
-    setup["env"] = "cp .env.example .env.local"
+    setup["env"] = "test -f .env.local || cp .env.example .env.local"
 
     if backend in ("payload", "payload-cms"):
         setup["db_migrate"] = "npx payload migrate"

@@ -500,3 +500,61 @@ def test_env_local_generated_for_sqlite(tmp_path):
     assert (tmp_path / ".env.local").exists()
     content = (tmp_path / ".env.local").read_text()
     assert "file:./" in content
+
+
+# -------------------------------------------------------
+# Migration template (LINT-001)
+# -------------------------------------------------------
+
+
+def test_node_api_postgres_has_migration_template(tmp_path):
+    write_scaffold(tmp_path, _make_spec())
+
+    template_path = tmp_path / "src/lib/migration-template.cjs"
+    assert template_path.exists()
+    content = template_path.read_text()
+    assert "_pgm" in content
+    assert "exports.up" in content
+    assert "exports.down" in content
+
+
+def test_node_api_postgres_package_json_has_migration_deps(tmp_path):
+    write_scaffold(tmp_path, _make_spec())
+
+    pkg = json.loads((tmp_path / "package.json").read_text())
+    assert "node-pg-migrate" in pkg["dependencies"]
+    assert "pg" in pkg["dependencies"]
+
+
+def test_node_api_postgres_package_json_has_migration_scripts(tmp_path):
+    write_scaffold(tmp_path, _make_spec())
+
+    pkg = json.loads((tmp_path / "package.json").read_text())
+    assert "db:migrate" in pkg["scripts"]
+    assert "db:migrate:create" in pkg["scripts"]
+    assert "db:migrate:status" in pkg["scripts"]
+    assert "migration-template.cjs" in pkg["scripts"]["db:migrate:create"]
+
+
+def test_payload_has_no_migration_template(tmp_path):
+    write_scaffold(tmp_path, _payload_spec())
+
+    assert not (tmp_path / "src/lib/migration-template.cjs").exists()
+
+
+def test_payload_package_json_has_no_node_pg_migrate(tmp_path):
+    write_scaffold(tmp_path, _payload_spec())
+
+    pkg = json.loads((tmp_path / "package.json").read_text())
+    assert "node-pg-migrate" not in pkg.get("dependencies", {})
+
+
+def test_sqlite_has_no_migration_template(tmp_path):
+    spec = _make_spec(stack={
+        "frontend": "nextjs",
+        "backend": "node-api",
+        "database": "sqlite",
+    })
+    write_scaffold(tmp_path, spec)
+
+    assert not (tmp_path / "src/lib/migration-template.cjs").exists()

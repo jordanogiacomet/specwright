@@ -1,0 +1,15 @@
+# progress.txt
+# Append-only execution log for this generated project
+# Format:
+# [ISO-8601 timestamp] STORY-ID — STATUS — Description
+#
+# Statuses:
+# START
+# DONE
+# BLOCKED
+# INFO
+# VALIDATION
+#
+# Example:
+# [2026-03-14T12:00:00Z] ST-001 — START — Began implementation of authentication flow
+[2026-03-18T23:29:17Z] ST-007 — START — Initialize project repository

@@ -1,8 +1,8 @@
 # Specwright — Full Repository Analysis
 
-**Date**: 2026-03-18
-**Test suite**: 219/219 passed (3.81s) — 62 new tests added (14 initial + 48 from action plan execution)
-**Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload)
+**Date**: 2026-03-18 (updated 2026-03-19)
+**Test suite**: 238/238 passed (4.11s) — 81 new tests added
+**Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow)
 
 ### Resolution Status
 
@@ -27,6 +27,53 @@
 | E2E     | VALIDATED | Full E2E run on 2 fresh projects (taskflow + newshub-cms); all fixes confirmed |
 | BUG-004 | FIXED | Backticks in `run_codex_retry` heredoc caused bash to execute `$previous_error` as command; escaped to `\`\`\`` |
 | ASSIST  | VALIDATED | `--assist` flow tested interactively (dentaldesk project); signals, conflicts, decisions, design style all captured correctly |
+| BUG-005 | FIXED | `.env.example` comment still said "cp .env.example .env.local" after IMP-009; README and docstring also stale |
+| BUG-006 | FIXED | `commands_engine.py` and `openclaw_bundle.py` used unconditional `cp` — now `test -f .env.local \|\| cp` |
+| GUARD-001 | ADDED | Scope boundary "Do NOT create files in src/pages/" added to bootstrap.repository and bootstrap.frontend stories |
+| GUARD-002 | ADDED | Scope boundary "Use env var names exactly as in .env.example" added to bootstrap.repository, backend, and frontend stories |
+| DEAD-001 | REMOVED | `initializer/synthesis/stories.py` — orphan file never imported by any module |
+| DEAD-002 | REMOVED | `initializer/test_prd_scoring.py` — broken test in wrong location, imports non-existent `ask_llm` |
+| INFRA-001 | ADDED | GitHub Actions CI workflow (`.github/workflows/test.yml`) — runs pytest on push/PR |
+| INFRA-002 | ADDED | `[project.optional-dependencies] dev = ["pytest"]` in `pyproject.toml` |
+| INFRA-003 | FIXED | `.gitignore` expanded (added `__pycache__/`, `*.pyc`, `*.egg-info/`, `.env`, etc.) |
+| INFRA-004 | ADDED | `Makefile` with `install`, `test`, `generate`, `clean` targets |
+| README   | UPDATED | Virtualenv instructions, 238+ test count, removed stale `cp .env.local`, documented `examples/` and `designs/` folders |
+
+---
+
+## Session 2 — Ralph Execution Analysis (2026-03-19)
+
+### Full ralph.sh execution on todo-app: 25/25 stories DONE
+
+Analyzed 21 Codex sessions from `ralph-evidence/todo-app/20260318T233312Z/`.
+
+**Execution time**: ~4h05m (23:29 → 03:34 UTC)
+**Static validation pass rate**: 100% (typecheck, lint, build — after self-corrections)
+**Database migration blockers**: 12 stories (Postgres not running in environment — not code bugs)
+
+### Bugs introduced by Codex (not Specwright)
+
+| # | Severity | Bug | Root cause | Specwright mitigation |
+|---|----------|-----|-----------|----------------------|
+| 1 | CRITICAL | `.env` defines `NEXT_PUBLIC_API_URL` but code uses `NEXT_PUBLIC_API_BASE_URL` | Codex invented a different variable name | GUARD-002: scope boundary now enforces using `.env.example` names exactly |
+| 2 | CRITICAL | `import Layout` (default) but component exports `export function Layout` (named) | Codex import error | Not preventable via story — code-level mistake |
+| 3 | HIGH | `src/pages/_app.tsx` and `_document.tsx` created — Pages Router in App Router project | Codex used wrong Next.js pattern | GUARD-001: scope boundary now explicitly prohibits `src/pages/` |
+| 4 | HIGH | Non-localized route `src/app/(app)/page.tsx` unreachable (middleware redirects to `[locale]/`) | Codex left orphan route after adding i18n | Not preventable via story — requires runtime validation |
+| 5 | MEDIUM | `.env.local` missing for `--env-file=.env.local` scripts in package.json | Scaffold comment was misleading | BUG-005/BUG-006: fixed in Specwright |
+
+### Recurring pattern: migration lint cleanup
+
+Auto-generated migration stubs from ST-008 had unused `pgm` parameters. Every subsequent story (15+) had to clean this lint warning, wasting Codex tokens and time.
+
+**Potential Specwright fix**: Generate migration stubs with `/* eslint-disable @typescript-eslint/no-unused-vars */` or use `_pgm` parameter naming convention.
+
+### What still needs runtime verification
+
+Once Postgres + Docker available:
+1. `npm run db:migrate` — 12 migration files generated but never executed
+2. Auth flow — login/register/logout against live DB
+3. Backup/restore scripts — need `pg_dump`/`pg_restore`
+4. Worker scheduler — needs live execution interval test
 
 ---
 
@@ -361,7 +408,59 @@ CODEX_MODEL="${CODEX_MODEL:-gpt-5.4}"
 | 13 | IMP-008 | Tiny | Low | Remove redundant `not in completed` check | DONE |
 | 14 | IMP-011 | Tiny | Low | Clean up or gitignore test output directories | N/A |
 
-**All 14 items resolved.** 13 implemented, 1 already covered by existing `.gitignore`.
+**All 14 original items resolved.** 13 implemented, 1 already covered by existing `.gitignore`.
+
+### Session 2 additions (2026-03-19)
+
+| Priority | ID | Effort | Impact | Action | Status |
+|----------|----|--------|--------|--------|--------|
+| 15 | BUG-005 | Tiny | Medium | Remove stale "cp .env.example" from scaffold comments/README/docstring | DONE |
+| 16 | BUG-006 | Tiny | Medium | Guard `.env.local` copy with `test -f` in commands_engine and openclaw_bundle | DONE |
+| 17 | GUARD-001 | Tiny | High | Add "Do NOT create files in src/pages/" scope boundary to bootstrap stories | DONE |
+| 18 | GUARD-002 | Tiny | High | Add "Use env var names exactly as in .env.example" scope boundary | DONE |
+| 19 | DEAD-001 | Tiny | Low | Remove orphan `synthesis/stories.py` | DONE |
+| 20 | DEAD-002 | Tiny | Low | Remove broken `test_prd_scoring.py` | DONE |
+| 21 | INFRA-001 | Small | Medium | GitHub Actions CI workflow | DONE |
+| 22 | INFRA-002 | Tiny | Medium | Add pytest to `[project.optional-dependencies]` | DONE |
+| 23 | INFRA-003 | Tiny | Low | Expand `.gitignore` | DONE |
+| 24 | INFRA-004 | Small | Low | Add Makefile | DONE |
+| 25 | README | Medium | High | Full README update (venv, test count, examples, designs) | DONE |
+
+### Open items (session 3)
+
+| Priority | ID | Effort | Impact | Action | Status |
+|----------|----|--------|--------|--------|--------|
+| 1 | RUNTIME-001 | Medium | High | Run `docker compose up -d && npm run dev` on a generated project to validate Dockerfile/docker-compose | DONE |
+| 2 | LINT-001 | Tiny | Medium | Generate migration stubs with `_pgm` or eslint-disable to prevent recurring lint cleanup | DONE |
+| 3 | TAG-001 | Tiny | Medium | Create v0.1.0 tag and GitHub release with notes | PENDING (gh CLI not installed; tag 0.1.0 already exists on master) |
+| 4 | CODEX-001 | Medium | Medium | Investigate if ralph.sh validation can catch orphan routes and import mismatches | DONE |
+
+#### RUNTIME-001 Results (2026-03-19)
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| `docker compose up -d` | PASS | Postgres healthy on port 5433 |
+| `npm run dev` (Next.js) | PASS | Server starts, ready in 22.4s |
+| `/api/health` | PASS | 200 OK, database: "up" |
+| `node-pg-migrate up` | PASS | Migrations complete |
+| Root page `/` | FAIL | Codex bug #2 (named vs default import of Layout) — not a Specwright bug |
+
+#### LINT-001 Changes
+
+- Scaffold now generates `src/lib/migration-template.cjs` with `_pgm` parameter naming for non-Payload postgres projects
+- `package.json` now includes `node-pg-migrate`, `pg` dependencies and `db:migrate`, `db:migrate:create`, `db:migrate:status` scripts with `--template-file-name` pointing to the custom template
+- AGENTS.md now instructs Codex to use `_pgm` in migration function signatures
+- 6 new tests added (244 total)
+
+#### CODEX-001 Changes
+
+ralph.sh validation now includes two new checks:
+
+1. **`npm run typecheck` (blocking)**: Runs `tsc --noEmit` when a `typecheck` script exists in `package.json`. Catches import mismatches (TS2613: named vs default) that `next build` misses because SWC does not enforce TypeScript import shape rules.
+
+2. **Orphan route detection (warning)**: When `middleware.ts` exists and contains locale-based redirects, scans for `page.tsx` files outside `[locale]/` and `api/` paths. Reports them as possibly unreachable due to middleware interception. Non-blocking (warning only).
+
+Also fixed pre-existing SyntaxWarnings from invalid escape sequences (`\`` and `\.`) in the ralph.sh f-string template.
 
 ---
 
@@ -429,7 +528,7 @@ The I/O layer (CLI prompts in `new_project.py`, filesystem writes in renderers) 
 ## Appendix: Test Suite Summary
 
 ```
-219 passed in 3.81s
+238 passed in 4.11s
 
 Coverage areas:
 - Archetype detection (keyword scoring, canonical IDs)
@@ -445,6 +544,8 @@ Coverage areas:
 - Codex bundle (24 tests: AGENTS.md, ralph.sh, scope boundaries, migration commands,
   configurable model, exit codes, per-backend migration dicts)
 - OpenClaw bundle (execution plan, phases, commands.json, manifest, stack-aware commands)
+
+- Assist flow (discovery, conflicts, challenge decisions — 19 tests)
 
 Remaining without dedicated tests:
 - openclaw_bundle.py internals (_build_agents_md, _build_openclaw_md)

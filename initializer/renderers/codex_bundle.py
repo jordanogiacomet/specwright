@@ -223,8 +223,9 @@ This includes:
 Migration workflow:
 1. Make the schema change (edit collection file)
 2. Generate a migration: `{migration_cmd}:create`
-3. Run the migration: `{migration_cmd}`
-4. Verify the migration ran: `{migration_cmd}:status`
+3. Implement the migration (use `_pgm` as the parameter name to avoid lint warnings, e.g. `exports.up = (_pgm) => {{ ... }}`)
+4. Run the migration: `{migration_cmd}`
+5. Verify the migration ran: `{migration_cmd}:status`
 
 **If you skip this step, the application will crash at runtime with "relation does not exist" errors.**
 
@@ -517,9 +518,9 @@ You are RETRYING a story that failed on the previous attempt for the project **{
 
 The previous attempt failed with:
 
-\`\`\`
+\\`\\`\\`
 $previous_error
-\`\`\`
+\\`\\`\\`
 
 ## What to do
 
@@ -713,6 +714,23 @@ for i in $(seq 0 $(( TOTAL - 1 ))); do
                 echo "Lint: PASS"
             fi
 
+            # Typecheck catches import mismatches (named vs default) that
+            # next build may miss because SWC does not enforce TS2613.
+            TYPECHECK_OUTPUT=""
+            if node -e "const p=require('./package.json'); if(!p.scripts?.typecheck) process.exit(1)" 2>/dev/null; then
+                if ! TYPECHECK_OUTPUT=$(npm run typecheck 2>&1); then
+                    echo "Typecheck: FAIL"
+                    VALIDATION_OK=false
+                    if [[ -n "$VALIDATION_ERRORS" ]]; then
+                        VALIDATION_ERRORS="$VALIDATION_ERRORS | Typecheck failure: $(echo "$TYPECHECK_OUTPUT" | tail -20)"
+                    else
+                        VALIDATION_ERRORS="Typecheck failure: $(echo "$TYPECHECK_OUTPUT" | tail -20)"
+                    fi
+                else
+                    echo "Typecheck: PASS"
+                fi
+            fi
+
             BUILD_OUTPUT=""
             if ! BUILD_OUTPUT=$(npm run build 2>&1); then
                 echo "Build: FAIL"
@@ -724,6 +742,23 @@ for i in $(seq 0 $(( TOTAL - 1 ))); do
                 fi
             else
                 echo "Build: PASS"
+            fi
+
+            # Orphan route detection: warn about pages outside [locale]/
+            # that would be intercepted by i18n middleware redirects.
+            if [[ -f "$SCRIPT_DIR/middleware.ts" ]] && grep -q "locale" "$SCRIPT_DIR/middleware.ts" 2>/dev/null; then
+                ORPHANS=""
+                while IFS= read -r route_file; do
+                    # Derive URL path: strip src/app prefix, remove route groups (parenthesized dirs)
+                    url_path=$(echo "$route_file" | sed 's|^src/app/||' | sed 's|/page[.]tsx$||' | sed 's|([^/]*)/||g')
+                    if [[ -n "$url_path" ]]; then
+                        ORPHANS="$ORPHANS  - $route_file -> /$url_path (unreachable — middleware redirects to /[locale]/$url_path)\\n"
+                    fi
+                done < <(find "$SCRIPT_DIR/src/app" -name "page.tsx" -not -path "*/\\[locale\\]/*" -not -path "*/api/*" -not -path "*/_*" 2>/dev/null | sed "s|^$SCRIPT_DIR/||" | grep -v "^src/app/page.tsx$")
+                if [[ -n "$ORPHANS" ]]; then
+                    echo "Orphan routes: WARN"
+                    echo -e "  Possible orphan routes (middleware redirects these):\\n$ORPHANS"
+                fi
             fi
         fi
 

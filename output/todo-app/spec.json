@@ -1,0 +1,1610 @@
+{
+  "prompt": "simple todo app",
+  "archetype": "todo-app",
+  "archetype_data": {
+    "id": "todo-app",
+    "name": "todo-app",
+    "stack": {
+      "frontend": "nextjs",
+      "backend": "node-api",
+      "database": "postgres"
+    },
+    "features": [
+      "authentication",
+      "api"
+    ],
+    "capabilities": []
+  },
+  "stack": {
+    "frontend": "nextjs",
+    "backend": "node-api",
+    "database": "postgres"
+  },
+  "features": [
+    "authentication",
+    "api",
+    "notifications"
+  ],
+  "capabilities": [
+    "public-site",
+    "cms",
+    "scheduled-jobs",
+    "i18n"
+  ],
+  "architecture": {
+    "decisions": [
+      "Public assets should be delivered through a CDN.",
+      "Use SSR or ISR for SEO-sensitive public pages when applicable.",
+      "CMS content stored in structured collections.",
+      "Media assets served via CDN.",
+      "Scheduled publishing requires a background worker.",
+      "Content models must support locale-aware fields and fallback rules.",
+      "[todo-data-model] Standard: title, description, completed, dueDate, priority, createdAt.",
+      "[todo-filtering] Basic: Filter by completed/pending + sort by date or priority.",
+      "[todo-auth-scope] Email + password only: Register, login, logout. No password reset, no OAuth.",
+      "[i18n-strategy] Full i18n (content + UI + routing): Content, UI labels, and URL structure are all locale-aware. Complete solution but more work upfront.",
+      "[job-infrastructure] Separate worker process: Dedicated worker process with its own lifecycle. More reliable. Can scale independently. Needs docker-compose entry.",
+      "[auth-strategy] Email + password (built-in): Classic email/password auth. Use the framework's built-in auth if available (e.g., Payload auth). Simple, no external dependencies.",
+      "Use SSR or ISR for SEO-sensitive pages.",
+      "Serve static assets through CDN.",
+      "Implement structured logging.",
+      "Add health check endpoints.",
+      "Use connection pooling.",
+      "Add automated database backups.",
+      "Background worker processes scheduled jobs.",
+      "Authentication handled via secure session or JWT.",
+      "Public-facing pages should use caching and delivery strategies appropriate for anonymous traffic.",
+      "SEO-sensitive public pages should use rendering strategies such as SSR or ISR when beneficial.",
+      "Automation workflows require a background worker and durable job execution strategy.",
+      "Work items should support due dates, deadline validation, and overdue detection.",
+      "Work items should support explicit status progression and progress visibility.",
+      "Ownership and assignment must be modeled for teams and individual users.",
+      "Reminder workflows should be driven by scheduled jobs and configurable trigger rules.",
+      "Operational reporting should be generated from durable domain data and background jobs when needed.",
+      "Introduce caching for frequently accessed public content.",
+      "CDN recommended for public assets.",
+      "Add monitoring and logging stack."
+    ],
+    "components": [
+      {
+        "name": "cdn",
+        "technology": "cdn",
+        "role": "public asset delivery"
+      },
+      {
+        "name": "worker",
+        "technology": "node-api",
+        "role": "process scheduled jobs",
+        "technology_alternatives": [
+          "background-worker"
+        ],
+        "role_alternatives": [
+          "background processing"
+        ]
+      },
+      {
+        "name": "frontend",
+        "technology": "nextjs",
+        "role": "user interface"
+      },
+      {
+        "name": "api",
+        "technology": "node-api",
+        "role": "application logic"
+      },
+      {
+        "name": "database",
+        "technology": "postgres",
+        "role": "persistent storage"
+      }
+    ],
+    "style": "service-oriented",
+    "communication": [
+      {
+        "from": "frontend",
+        "to": "api",
+        "protocol": "http",
+        "pattern": "REST API",
+        "auth": "JWT bearer token or session cookie"
+      },
+      {
+        "from": "api",
+        "to": "database",
+        "protocol": "tcp",
+        "pattern": "ORM or query builder over postgres connection pool"
+      },
+      {
+        "from": "worker",
+        "to": "database",
+        "protocol": "tcp",
+        "pattern": "Direct postgres connection for job execution"
+      },
+      {
+        "from": "worker",
+        "to": "api",
+        "protocol": "http",
+        "pattern": "Internal HTTP call for notification delivery or webhook triggers"
+      },
+      {
+        "from": "cdn",
+        "to": "frontend",
+        "protocol": "http",
+        "pattern": "Edge cache proxying static assets and SSR/ISR responses"
+      }
+    ],
+    "boundaries": {
+      "frontend": [
+        "Rendering pages and UI components",
+        "Client-side routing and navigation",
+        "Form validation (client-side)",
+        "Client-side state management",
+        "Public page rendering (SSR/ISR) for SEO",
+        "CDN-compatible caching headers",
+        "Locale-aware rendering and text formatting"
+      ],
+      "backend": [
+        "Business logic and domain rules",
+        "Authentication and session management",
+        "Authorization and permission enforcement",
+        "Data persistence and queries",
+        "Input validation (server-side, authoritative)",
+        "Background job scheduling and execution",
+        "Locale-aware data storage and API responses"
+      ],
+      "shared": [
+        "Shared types or API contract between frontend and backend"
+      ]
+    }
+  },
+  "stories": [
+    {
+      "id": "ST-001",
+      "title": "Configure CDN",
+      "description": "Configure CDN for public site asset delivery.",
+      "acceptance_criteria": [
+        "Public assets are served through a CDN or edge cache",
+        "Cache headers are configured for static assets",
+        "Public routes are accessible without authentication",
+        "CDN configuration does not break authenticated admin routes"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement the full public site layout — only the delivery infrastructure",
+        "Do NOT implement SEO optimizations in this story"
+      ],
+      "expected_files": [
+        "next.config.ts (updated with caching/CDN headers if applicable)"
+      ],
+      "depends_on": [
+        "bootstrap.frontend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Public route loads and static assets have appropriate cache headers"
+      }
+    },
+    {
+      "id": "ST-002",
+      "title": "Define CMS content model",
+      "description": "Define CMS collections, media handling, and editorial workflows.",
+      "acceptance_criteria": [
+        "Content collections are defined with required fields and validation",
+        "Content items can be created, read, updated, and deleted via the admin",
+        "Media handling is configured for image and file uploads",
+        "Database migration is generated and executed for all schema changes (run migrate:create then migrate)",
+        "Content API endpoints are created and respond correctly"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement draft/publish workflow — that is a separate story",
+        "Do NOT implement media library UI — focus on the content model and API",
+        "Do NOT implement public-facing content delivery"
+      ],
+      "expected_files": [
+        "src/api/content.ts or equivalent",
+        "src/models/Article.ts or equivalent"
+      ],
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Can create and retrieve a content item via admin or API"
+      }
+    },
+    {
+      "id": "ST-003",
+      "title": "Setup job worker",
+      "description": "Create worker process responsible for scheduled publishing.",
+      "acceptance_criteria": [
+        "Worker process starts and connects to the database",
+        "Worker runs on a configurable interval",
+        "Worker logs execution start and completion",
+        "Worker does not block the main application server"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement specific job logic — only the worker infrastructure",
+        "Do NOT implement job management UI"
+      ],
+      "expected_files": [
+        "src/jobs/index.ts",
+        "src/lib/scheduler.ts"
+      ],
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Worker process starts and logs heartbeat"
+      }
+    },
+    {
+      "id": "ST-004",
+      "title": "Implement publishing scheduler",
+      "description": "Create scheduled publishing mechanism.",
+      "acceptance_criteria": [
+        "Content with a scheduled publish date is published automatically",
+        "Scheduler checks for due content on each run",
+        "Published content is visible on the appropriate surface",
+        "Failed publish attempts are logged"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement scheduled unpublishing",
+        "Do NOT implement complex retry logic — simple retry on next run is sufficient"
+      ],
+      "expected_files": [
+        "src/jobs/publish-scheduled.ts"
+      ],
+      "depends_on": [
+        "feature.draft-publish"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build",
+          "npm test"
+        ],
+        "manual_check": "Set publishAt to near future, verify content publishes automatically"
+      }
+    },
+    {
+      "id": "ST-005",
+      "title": "Add locale support",
+      "description": "Add locale fields and fallback rules to content models.",
+      "acceptance_criteria": [
+        "Content collections support locale-specific fields",
+        "Fallback rules are defined for missing translations",
+        "Admin interface allows editing content per locale",
+        "API responses include locale metadata",
+        "Database migration is generated and executed for locale field changes (run migrate:create then migrate)"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement locale routing in this story — that is separate",
+        "Do NOT implement machine translation"
+      ],
+      "expected_files": [
+        "src/lib/i18n.ts"
+      ],
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Can create content in multiple locales via admin"
+      }
+    },
+    {
+      "id": "ST-006",
+      "title": "Implement locale routing",
+      "description": "Add locale-aware routing in the frontend experience.",
+      "acceptance_criteria": [
+        "URLs include locale prefix (e.g., /en/..., /pt/...)",
+        "Correct locale content is rendered per route",
+        "Default locale is used when no prefix is provided",
+        "Locale can be switched without losing page context"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement locale detection from browser headers",
+        "Do NOT implement per-user locale preferences"
+      ],
+      "expected_files": [
+        "src/app/[locale]/layout.tsx",
+        "src/lib/i18n.ts (updated with routing helpers)"
+      ],
+      "depends_on": [
+        "bootstrap.frontend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Can navigate /en/ and /pt/ and see different content"
+      }
+    },
+    {
+      "id": "ST-007",
+      "story_key": "bootstrap.repository",
+      "title": "Initialize project repository",
+      "description": "Create project structure using nextjs + node-api + postgres.",
+      "acceptance_criteria": [
+        "package.json exists with scripts: dev, build, lint, test",
+        ".env.example exists with all required environment variables",
+        ".env.local is created by copying .env.example with working default values for local development",
+        "TypeScript is configured with tsconfig.json",
+        "ESLint and Prettier are configured",
+        "npm install completes without errors",
+        "npm run build passes"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement any features yet — this is project scaffolding only",
+        "Do NOT add authentication, roles, or any business logic",
+        "Do NOT create database tables — that is a separate story"
+      ],
+      "expected_files": [
+        "package.json",
+        "tsconfig.json",
+        ".eslintrc.js or eslint.config.js",
+        ".env.example",
+        ".env.local",
+        ".gitignore",
+        "README.md"
+      ],
+      "depends_on": [],
+      "validation": {
+        "commands": [
+          "npm install",
+          "npm run build",
+          "npm run lint"
+        ],
+        "manual_check": "Project directory exists with expected structure"
+      }
+    },
+    {
+      "id": "ST-008",
+      "story_key": "bootstrap.database",
+      "title": "Setup database",
+      "description": "Configure postgres database with connection pool and migrations.",
+      "acceptance_criteria": [
+        "postgres connection is configured via environment variable",
+        "Database client or ORM is installed and configured",
+        "Initial migration or schema setup runs without errors",
+        "Connection can be verified programmatically",
+        "docker-compose.yml includes database service",
+        "Database migration is generated and executed for all schema changes (run migrate:create then migrate)"
+      ],
+      "scope_boundaries": [
+        "Do NOT create application tables yet — only the connection layer",
+        "Do NOT add seed data",
+        "Do NOT implement any API endpoints"
+      ],
+      "expected_files": [
+        "docker-compose.yml",
+        "src/lib/db.ts",
+        ".env.example (updated with DB connection string)"
+      ],
+      "depends_on": [
+        "bootstrap.repository"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Database container starts and connection succeeds"
+      }
+    },
+    {
+      "id": "ST-009",
+      "story_key": "bootstrap.backend",
+      "title": "Setup backend service",
+      "description": "Initialize backend using node-api with database connection.",
+      "acceptance_criteria": [
+        "Backend is initialized using node-api",
+        "Server starts and responds to health check",
+        "API is accessible at the configured port",
+        "Express or Fastify server starts with basic health endpoint"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement authentication yet",
+        "Do NOT create domain collections or models yet",
+        "Do NOT add business logic — only the backend skeleton"
+      ],
+      "expected_files": [
+        "src/server.ts",
+        "src/api/health.ts"
+      ],
+      "depends_on": [
+        "bootstrap.database"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Backend starts and /api/health or /admin responds"
+      }
+    },
+    {
+      "id": "ST-010",
+      "story_key": "bootstrap.frontend",
+      "title": "Create frontend application",
+      "description": "Implement frontend application shell using nextjs.",
+      "acceptance_criteria": [
+        "Frontend application renders using nextjs",
+        "Root page loads without errors",
+        "Basic layout component exists (shell, navigation placeholder)",
+        "Next.js app router is configured with route groups"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement pages beyond the root layout and a placeholder home page",
+        "Do NOT add authentication UI — that is a separate story",
+        "Do NOT style extensively — basic layout only"
+      ],
+      "expected_files": [
+        "src/app/(app)/page.tsx",
+        "src/components/Layout.tsx",
+        "src/app/layout.tsx"
+      ],
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Frontend loads in browser without errors"
+      }
+    },
+    {
+      "id": "ST-011",
+      "story_key": "feature.authentication",
+      "title": "Implement authentication",
+      "description": "Add registration, login, logout and session management.",
+      "acceptance_criteria": [
+        "Users can register with email and password",
+        "Users can log in and receive a valid session",
+        "Users can log out and have their session invalidated",
+        "Protected routes return 401 for unauthenticated requests",
+        "Passwords are hashed before storage",
+        "Database migration is generated and executed for all schema changes (run migrate:create then migrate)"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement OAuth or social login in this story",
+        "Do NOT implement password reset or email verification",
+        "Do NOT implement MFA"
+      ],
+      "expected_files": [
+        "src/lib/auth.ts",
+        "src/api/auth.ts",
+        "src/app/(auth)/login/page.tsx"
+      ],
+      "depends_on": [
+        "bootstrap.backend",
+        "bootstrap.frontend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build",
+          "npm test"
+        ],
+        "manual_check": "Can register, log in, and access protected route"
+      }
+    },
+    {
+      "id": "ST-012",
+      "story_key": "feature.notifications",
+      "title": "Implement notification system",
+      "description": "Add notification delivery for important events.",
+      "acceptance_criteria": [
+        "Notifications can be created programmatically for events",
+        "Users can see their notifications in the UI",
+        "Notifications have read/unread state",
+        "Notification preferences or rules can be configured per user"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement email or push notification delivery in this story",
+        "Do NOT implement real-time WebSocket delivery — polling or page-load is sufficient"
+      ],
+      "expected_files": [
+        "src/api/notifications.ts",
+        "src/components/NotificationCenter.tsx",
+        "src/lib/notifications.ts"
+      ],
+      "depends_on": [
+        "feature.authentication"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Can trigger a notification and see it in the UI"
+      }
+    },
+    {
+      "id": "ST-013",
+      "story_key": "product.deadlines",
+      "title": "Model deadlines and due dates",
+      "description": "Implement domain support for deadlines, due dates, and related validations.",
+      "acceptance_criteria": [
+        "Work items have a dueDate field",
+        "Overdue items are identifiable via query or computed field",
+        "UI displays due date and overdue status clearly",
+        "Due date can be set and updated by authorized roles"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement reminder notifications — that is a separate story",
+        "Do NOT implement recurring deadlines"
+      ],
+      "expected_files": [
+        "src/lib/deadlines.ts"
+      ],
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build",
+          "npm test"
+        ],
+        "manual_check": "Can set a due date and see overdue status"
+      }
+    },
+    {
+      "id": "ST-014",
+      "story_key": "product.progress-tracking",
+      "title": "Implement progress tracking",
+      "description": "Add progress tracking and status transitions for core work items.",
+      "acceptance_criteria": [
+        "Work items have a status field with defined states and valid transitions",
+        "Status transitions are enforced — invalid transitions return an error",
+        "UI reflects current status with visual indicators",
+        "Status history is tracked or at least the last transition is logged"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement Kanban or drag-and-drop UI",
+        "Do NOT implement automated status transitions"
+      ],
+      "expected_files": [
+        "src/lib/status-machine.ts"
+      ],
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build",
+          "npm test"
+        ],
+        "manual_check": "Can transition a work item through valid states"
+      }
+    },
+    {
+      "id": "ST-015",
+      "story_key": "product.task-assignment",
+      "title": "Implement task assignment",
+      "description": "Allow work items to be assigned to owners and teams.",
+      "acceptance_criteria": [
+        "Work items have an assignee field referencing a user",
+        "Authorized roles can assign and reassign work items",
+        "Assigned user can see their assignments in a filtered view",
+        "Unassigned items are identifiable"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement workload balancing or auto-assignment",
+        "Do NOT implement team-based assignment — start with individual assignment"
+      ],
+      "expected_files": [
+        "src/components/AssigneeSelect.tsx"
+      ],
+      "depends_on": [
+        "feature.authentication"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build",
+          "npm test"
+        ],
+        "manual_check": "Can assign a work item and see it in the assignee's view"
+      }
+    },
+    {
+      "id": "ST-016",
+      "story_key": "product.reminders",
+      "title": "Implement reminders",
+      "description": "Add reminder workflows for approaching deadlines and pending work.",
+      "acceptance_criteria": [
+        "Reminders are generated for work items approaching their due date",
+        "Reminders appear in the notification center or a dedicated view",
+        "Reminder timing is configurable (e.g., 1 day before, same day)",
+        "Completed items do not generate reminders"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement email or push delivery for reminders",
+        "Do NOT implement custom reminder rules per user"
+      ],
+      "expected_files": [
+        "src/jobs/generate-reminders.ts",
+        "src/lib/reminders.ts"
+      ],
+      "depends_on": [
+        "product.deadlines"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build",
+          "npm test"
+        ],
+        "manual_check": "Reminder appears for a work item near its due date"
+      }
+    },
+    {
+      "id": "ST-017",
+      "story_key": "product.report-generation",
+      "title": "Implement report generation",
+      "description": "Generate summary reports for work progress and operational visibility.",
+      "acceptance_criteria": [
+        "At least one report type is available (e.g., weekly summary, status distribution)",
+        "Report data is queried from the database, not hardcoded",
+        "Report is viewable in the UI with appropriate formatting",
+        "Report can be filtered by date range or team"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement PDF export in this story",
+        "Do NOT implement scheduled report delivery",
+        "Do NOT implement custom report builder"
+      ],
+      "expected_files": [
+        "src/app/(app)/reports/page.tsx",
+        "src/api/reports.ts"
+      ],
+      "depends_on": [
+        "bootstrap.backend",
+        "bootstrap.frontend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Report page shows data from the database with date filtering"
+      }
+    },
+    {
+      "id": "ST-018",
+      "story_key": "product.automation-jobs",
+      "title": "Implement background automation jobs",
+      "description": "Implement scheduled and background jobs for application automation workflows.",
+      "acceptance_criteria": [
+        "At least one background job runs on a configurable interval",
+        "Job execution is logged with timestamps and outcomes",
+        "Failed jobs are retried or flagged",
+        "Jobs run independently of the main application process"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement a distributed job queue",
+        "Do NOT implement job management UI"
+      ],
+      "expected_files": [
+        "src/jobs/index.ts",
+        "src/lib/scheduler.ts"
+      ],
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build",
+          "npm test"
+        ],
+        "manual_check": "Background job runs and logs output"
+      }
+    },
+    {
+      "id": "ST-019",
+      "story_key": "product.todo-model",
+      "title": "Implement Todo data model",
+      "description": "Create the Todo entity with all fields and database schema.",
+      "acceptance_criteria": [
+        "Todo model exists with fields: title (required), description (optional), completed (boolean, default false), dueDate (optional), priority (enum: low/medium/high, default medium), createdAt, updatedAt",
+        "Database migration creates the todos table with proper types and indexes",
+        "Todo belongs to a User via userId foreign key",
+        "Database migration is generated and executed for schema changes"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement API endpoints yet — only the data model and migration",
+        "Do NOT implement tags, categories, or recurring todos",
+        "Do NOT implement soft-delete"
+      ],
+      "expected_files": [
+        "src/models/todo.ts",
+        "src/lib/db.ts"
+      ],
+      "depends_on": [
+        "bootstrap.database",
+        "feature.authentication"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Migration runs and todos table exists in database"
+      }
+    },
+    {
+      "id": "ST-020",
+      "story_key": "product.todo-api",
+      "title": "Implement Todo CRUD API",
+      "description": "Create REST API endpoints for creating, reading, updating, and deleting todos.",
+      "acceptance_criteria": [
+        "POST /api/todos creates a new todo for the authenticated user",
+        "GET /api/todos returns all todos for the authenticated user",
+        "PATCH /api/todos/:id updates a todo (title, description, completed, dueDate, priority)",
+        "DELETE /api/todos/:id permanently deletes a todo",
+        "All endpoints require authentication and enforce owner-only access",
+        "Invalid requests return appropriate error responses (400, 401, 404)"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement filtering or sorting yet — that is a separate story",
+        "Do NOT implement bulk operations",
+        "Do NOT implement pagination yet"
+      ],
+      "expected_files": [
+        "src/api/todos.ts or src/app/api/todos/route.ts",
+        "src/api/todos/[id].ts or src/app/api/todos/[id]/route.ts"
+      ],
+      "depends_on": [
+        "product.todo-model"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build",
+          "npm test"
+        ],
+        "manual_check": "Can create, read, update, delete a todo via API while authenticated"
+      }
+    },
+    {
+      "id": "ST-021",
+      "story_key": "product.todo-ui",
+      "title": "Implement Todo list UI",
+      "description": "Create the frontend todo list with add, toggle, and delete functionality.",
+      "acceptance_criteria": [
+        "Todo list page shows all todos for the logged-in user",
+        "User can add a new todo with title (required) and optional fields",
+        "User can toggle a todo between pending and completed",
+        "User can delete a todo with confirmation",
+        "Completed todos are visually distinct (strikethrough or dimmed)",
+        "Empty state is shown when no todos exist",
+        "Loading state is shown while fetching"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement drag-and-drop reordering",
+        "Do NOT implement inline editing — use a form or modal",
+        "Do NOT implement filtering UI yet"
+      ],
+      "expected_files": [
+        "src/app/(app)/todos/page.tsx",
+        "src/components/TodoList.tsx",
+        "src/components/TodoItem.tsx",
+        "src/components/AddTodoForm.tsx"
+      ],
+      "depends_on": [
+        "product.todo-api",
+        "bootstrap.frontend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Can see todo list, add a todo, toggle it, and delete it in the browser"
+      }
+    },
+    {
+      "id": "ST-022",
+      "story_key": "product.todo-filtering",
+      "title": "Implement Todo filtering and sorting",
+      "description": "Add ability to filter todos by status and sort by date or priority.",
+      "acceptance_criteria": [
+        "User can filter todos: All, Pending, Completed",
+        "User can sort todos by: newest first, oldest first, priority (high to low)",
+        "Filter and sort state persists during the session (not across page reloads)",
+        "API supports query params: ?completed=true|false&sort=createdAt|priority&order=asc|desc",
+        "URL reflects current filter state for shareability"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement full-text search",
+        "Do NOT implement tag-based filtering",
+        "Do NOT implement saved filter presets"
+      ],
+      "expected_files": [
+        "src/components/TodoFilters.tsx"
+      ],
+      "depends_on": [
+        "product.todo-ui"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Can filter by pending/completed and sort by date or priority"
+      }
+    },
+    {
+      "id": "ST-900",
+      "title": "Setup monitoring and logging",
+      "story_key": "operations.monitoring",
+      "description": "Integrate structured logging, health checks, and error tracking across the application.",
+      "acceptance_criteria": [
+        "Structured JSON logging is configured for all backend services",
+        "Log levels (debug, info, warn, error) are used consistently",
+        "Health check endpoint exists and returns service status",
+        "Unhandled errors are caught and logged with stack traces",
+        "Database connection health is included in the health check response",
+        "Background job execution is logged with start time, duration, and outcome",
+        "Request logging includes response time for public-facing routes"
+      ],
+      "scope_boundaries": [
+        "Do NOT integrate external monitoring services (Datadog, Sentry, etc.) — use structured logs only",
+        "Do NOT implement custom dashboards — logs should be queryable via standard tools",
+        "Do NOT add performance profiling — focus on operational visibility"
+      ],
+      "expected_files": [
+        "src/lib/logger.ts",
+        "src/app/api/health/route.ts"
+      ],
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "validation": {
+        "commands": [
+          "npm run build"
+        ],
+        "manual_check": "Health check endpoint returns 200 with service status; logs appear in structured JSON format"
+      }
+    },
+    {
+      "id": "ST-901",
+      "title": "Implement backups",
+      "story_key": "operations.backups",
+      "description": "Automate postgres database backups with retention policies and documented restore procedure.",
+      "acceptance_criteria": [
+        "Automated postgres backup script exists and runs successfully",
+        "Backup files are stored in a configurable location",
+        "Backup retention policy is documented (e.g., keep last 7 daily backups)",
+        "Restore procedure is documented and has been tested manually",
+        "Backup uses pg_dump with custom format for efficient storage and selective restore",
+        "Backup script can run inside or outside the Docker environment"
+      ],
+      "scope_boundaries": [
+        "Do NOT implement cloud-specific backup solutions (RDS snapshots, etc.) — use portable scripts",
+        "Do NOT implement real-time replication — periodic backups are sufficient for MVP",
+        "Do NOT implement backup monitoring or alerting — that can be added later"
+      ],
+      "expected_files": [
+        "scripts/backup.sh",
+        "scripts/restore.sh",
+        "docs/backup-restore.md"
+      ],
+      "depends_on": [
+        "bootstrap.database"
+      ],
+      "validation": {
+        "commands": [
+          "bash scripts/backup.sh"
+        ],
+        "manual_check": "Backup file is created; restore script successfully restores a test postgres dump"
+      }
+    }
+  ],
+  "answers": {
+    "project_name": "todo-app",
+    "project_slug": "todo-app",
+    "summary": "Simple todo app with authentication and API support featuring deadlines, task assignment, progress tracking, reminders, and report generation. Includes CMS, internationalization, and scheduled jobs support.",
+    "surface": "admin_plus_public_site",
+    "deploy_target": "docker"
+  },
+  "discovery": {
+    "assisted": true,
+    "decision_signals": {
+      "needs_public_site": true,
+      "app_shape": "generic-web-app",
+      "primary_audience": "mixed",
+      "core_work_features": [
+        "deadlines",
+        "task-assignment",
+        "progress-tracking",
+        "reminders",
+        "report-generation"
+      ],
+      "needs_cms": true,
+      "needs_i18n": true,
+      "needs_scheduled_jobs": true
+    },
+    "inferred_signals": {
+      "needs_public_site": true,
+      "app_shape": "generic-web-app"
+    },
+    "confirmed_signals": {
+      "core_work_features": [
+        "deadlines",
+        "task-assignment",
+        "progress-tracking",
+        "reminders",
+        "report-generation"
+      ],
+      "needs_cms": true,
+      "needs_i18n": true,
+      "needs_scheduled_jobs": true,
+      "primary_audience": "mixed"
+    },
+    "assumptions": [
+      "The todo app includes a public-facing web interface as indicated by 'admin_plus_public_site' surface.",
+      "Authentication feature implies user login and access control are required.",
+      "No CMS capability is currently indicated or required based on the provided archetype and prompt.",
+      "The user confirmed a public-facing site is required as indicated by 'admin_plus_public_site' surface and explicit needs_public_site signal.",
+      "CMS is needed for content management related to the todo app as explicitly answered true.",
+      "Internationalization support is required for multiple language support.",
+      "Scheduled jobs support is needed for background processing such as reminders and notifications.",
+      "Core work features include deadlines, task assignment, progress tracking, reminders, and report generation as explicitly answered."
+    ],
+    "open_questions": [
+      "What specific core work features should the todo app provide beyond basic task management?",
+      "Is content management functionality needed for managing any content related to the todo app?",
+      "Is internationalization required for multiple languages?",
+      "Are scheduled background jobs needed for reminders or notifications?"
+    ],
+    "deployment_considerations": [
+      "Ensure docker deployment supports Next.js frontend, Node.js API backend, and PostgreSQL database connectivity.",
+      "Docker deployment requires correct containerization of backend (Node.js API), frontend (Next.js), and Postgres database services.",
+      "Scheduled jobs capability implies a persistent background worker or job scheduler service.",
+      "Internationalization needs support in UI and content management layers."
+    ],
+    "capability_candidates": [
+      "public-site",
+      "cms",
+      "scheduled-jobs",
+      "i18n"
+    ],
+    "feature_candidates": [
+      "authentication",
+      "api",
+      "notifications"
+    ],
+    "conflicts": [],
+    "applied_answer_updates": {
+      "summary": "Simple todo app with authentication and API support featuring deadlines, task assignment, progress tracking, reminders, and report generation. Includes CMS, internationalization, and scheduled jobs support."
+    },
+    "applied_capability_candidates": [
+      "cms",
+      "scheduled-jobs",
+      "i18n"
+    ],
+    "removed_capabilities": [],
+    "applied_feature_candidates": [
+      "notifications"
+    ],
+    "influenced_spec": true,
+    "additional_questions": [
+      {
+        "id": "core_work_features",
+        "question": "Which core work features are needed? (e.g. deadlines, task-assignment, progress-tracking, reminders, report-generation)",
+        "answer_type": "list",
+        "signal_key": "core_work_features"
+      },
+      {
+        "id": "needs_cms",
+        "question": "Does this todo app need a CMS (content management system)?",
+        "answer_type": "boolean",
+        "signal_key": "needs_cms"
+      },
+      {
+        "id": "needs_i18n",
+        "question": "Does this todo app need internationalization support?",
+        "answer_type": "boolean",
+        "signal_key": "needs_i18n"
+      },
+      {
+        "id": "needs_scheduled_jobs",
+        "question": "Does this todo app need scheduled jobs (e.g. background processing, task reminders)?",
+        "answer_type": "boolean",
+        "signal_key": "needs_scheduled_jobs"
+      },
+      {
+        "id": "primary_audience",
+        "question": "Is the primary audience for this tool internal teams, external clients, or both equally?",
+        "answer_type": "enum",
+        "choices": [
+          "internal_teams",
+          "external_clients",
+          "mixed",
+          "unknown"
+        ],
+        "signal_key": "primary_audience"
+      }
+    ],
+    "followup_answers": {
+      "core_work_features": {
+        "question": "Which core work features are needed? (e.g. deadlines, task-assignment, progress-tracking, reminders, report-generation)",
+        "answer_type": "list",
+        "raw_answer": "deadlines, task-assignment, progress-tracking, reminders, report-generation",
+        "value": [
+          "deadlines",
+          "task-assignment",
+          "progress-tracking",
+          "reminders",
+          "report-generation"
+        ],
+        "signal_key": "core_work_features"
+      },
+      "needs_cms": {
+        "question": "Does this todo app need a CMS (content management system)?",
+        "answer_type": "boolean",
+        "raw_answer": "1",
+        "value": true,
+        "signal_key": "needs_cms"
+      },
+      "needs_i18n": {
+        "question": "Does this todo app need internationalization support?",
+        "answer_type": "boolean",
+        "raw_answer": "1",
+        "value": true,
+        "signal_key": "needs_i18n"
+      },
+      "needs_scheduled_jobs": {
+        "question": "Does this todo app need scheduled jobs (e.g. background processing, task reminders)?",
+        "answer_type": "boolean",
+        "raw_answer": "1",
+        "value": true,
+        "signal_key": "needs_scheduled_jobs"
+      },
+      "primary_audience": {
+        "question": "Is the primary audience for this tool internal teams, external clients, or both equally?",
+        "answer_type": "enum",
+        "raw_answer": "3",
+        "value": "mixed",
+        "signal_key": "primary_audience"
+      }
+    }
+  },
+  "challenge_decisions": {
+    "todo-data-model": {
+      "chosen_option": "b",
+      "custom_text": "",
+      "option_label": "Standard",
+      "option_detail": "title, description, completed, dueDate, priority, createdAt."
+    },
+    "todo-filtering": {
+      "chosen_option": "b",
+      "custom_text": "",
+      "option_label": "Basic",
+      "option_detail": "Filter by completed/pending + sort by date or priority."
+    },
+    "todo-auth-scope": {
+      "chosen_option": "a",
+      "custom_text": "",
+      "option_label": "Email + password only",
+      "option_detail": "Register, login, logout. No password reset, no OAuth."
+    },
+    "i18n-strategy": {
+      "chosen_option": "b",
+      "custom_text": "",
+      "option_label": "Full i18n (content + UI + routing)",
+      "option_detail": "Content, UI labels, and URL structure are all locale-aware. Complete solution but more work upfront."
+    },
+    "job-infrastructure": {
+      "chosen_option": "b",
+      "custom_text": "",
+      "option_label": "Separate worker process",
+      "option_detail": "Dedicated worker process with its own lifecycle. More reliable. Can scale independently. Needs docker-compose entry."
+    },
+    "auth-strategy": {
+      "chosen_option": "a",
+      "custom_text": "",
+      "option_label": "Email + password (built-in)",
+      "option_detail": "Classic email/password auth. Use the framework's built-in auth if available (e.g., Payload auth). Simple, no external dependencies."
+    }
+  },
+  "constraints": {
+    "performance": [
+      "Public pages should render quickly under normal load.",
+      "API responses should target low median latency for public traffic.",
+      "Public assets should be cacheable and efficiently delivered."
+    ],
+    "scalability": [
+      "System should support horizontal scaling of application servers.",
+      "Database must support concurrent authenticated users.",
+      "Background job workers must scale independently from interactive application traffic."
+    ],
+    "security": [
+      "All authentication flows must enforce secure password hashing.",
+      "All external APIs must require authentication or signed requests."
+    ],
+    "operational": [
+      "Localization resources and locale handling must remain consistent across frontend and backend.",
+      "Application must support environment-based configuration.",
+      "Structured logging should be used for all backend services.",
+      "Application must run in containerized environments."
+    ]
+  },
+  "design_system": {
+    "philosophy": [
+      "Favor clarity and content-first layout.",
+      "Use consistent spacing scale and typography hierarchy.",
+      "Minimize cognitive load across the application experience."
+    ],
+    "tokens": {
+      "spacing": {
+        "xs": "4px",
+        "sm": "8px",
+        "md": "16px",
+        "lg": "24px",
+        "xl": "32px",
+        "2xl": "48px"
+      },
+      "border_radius": {
+        "sm": "4px",
+        "md": "6px",
+        "lg": "12px",
+        "full": "9999px"
+      },
+      "font": {
+        "primary": "Inter",
+        "secondary": "system-ui",
+        "mono": "JetBrains Mono, monospace"
+      },
+      "font_size": {
+        "xs": "12px",
+        "sm": "14px",
+        "base": "16px",
+        "lg": "18px",
+        "xl": "20px",
+        "2xl": "24px",
+        "3xl": "30px"
+      },
+      "line_height": {
+        "tight": "1.25",
+        "normal": "1.5",
+        "relaxed": "1.75"
+      },
+      "shadow": {
+        "sm": "0 1px 2px rgba(0,0,0,0.05)",
+        "md": "0 4px 6px rgba(0,0,0,0.07)",
+        "lg": "0 10px 15px rgba(0,0,0,0.1)"
+      },
+      "transition": {
+        "fast": "150ms ease",
+        "normal": "200ms ease",
+        "slow": "300ms ease"
+      },
+      "tailwind_mapping": "Use Tailwind utility classes directly. Only use custom CSS for complex animations or layouts not expressible with utilities.",
+      "colors": {
+        "primary": "orange-600",
+        "primary_hover": "orange-700",
+        "background": "stone-50",
+        "surface": "white",
+        "text": "stone-900",
+        "text_secondary": "stone-600",
+        "muted": "stone-400",
+        "border": "stone-200",
+        "destructive": "red-600",
+        "success": "green-600",
+        "warning": "yellow-500",
+        "info": "blue-500",
+        "focus_ring": "orange-500/50"
+      }
+    },
+    "components": [
+      {
+        "name": "Button",
+        "purpose": "Primary action trigger",
+        "variants": [
+          "primary",
+          "secondary",
+          "destructive",
+          "ghost"
+        ]
+      },
+      {
+        "name": "Input",
+        "purpose": "Text input field",
+        "variants": [
+          "default",
+          "error",
+          "disabled"
+        ]
+      },
+      {
+        "name": "Textarea",
+        "purpose": "Multi-line text input"
+      },
+      {
+        "name": "Select",
+        "purpose": "Dropdown selection"
+      },
+      {
+        "name": "Modal",
+        "purpose": "Overlay dialog",
+        "variants": [
+          "sm",
+          "md",
+          "lg"
+        ]
+      },
+      {
+        "name": "Toast",
+        "purpose": "Transient notification",
+        "variants": [
+          "success",
+          "error",
+          "warning",
+          "info"
+        ]
+      },
+      {
+        "name": "Dropdown",
+        "purpose": "Action menu"
+      },
+      {
+        "name": "NavigationBar",
+        "purpose": "Primary navigation bar"
+      },
+      {
+        "name": "ContentCard",
+        "purpose": "Card for displaying content items in lists"
+      },
+      {
+        "name": "RichTextEditor",
+        "purpose": "Block-based rich text editing for content"
+      },
+      {
+        "name": "MediaPicker",
+        "purpose": "Media selection and upload dialog"
+      },
+      {
+        "name": "ContentList",
+        "purpose": "Filterable list of content items with status"
+      },
+      {
+        "name": "ContentStatusBadge",
+        "purpose": "Visual indicator for content workflow state",
+        "variants": [
+          "draft",
+          "in_review",
+          "published",
+          "archived"
+        ]
+      },
+      {
+        "name": "PublishControls",
+        "purpose": "Publish, schedule, and unpublish action group"
+      },
+      {
+        "name": "HeroBlock",
+        "purpose": "Full-width hero section for landing pages"
+      },
+      {
+        "name": "Footer",
+        "purpose": "Site-wide footer with links and metadata"
+      },
+      {
+        "name": "NotificationCenter",
+        "purpose": "Notification inbox with read/unread state and actions"
+      }
+    ],
+    "patterns": [
+      "Provide clear status indicators for important workflow states.",
+      "Use progressive disclosure for advanced options.",
+      "Preview mode should match rendered output closely.",
+      "Use explicit draft and publish states for editorial workflows.",
+      "Design text containers to handle locale expansion gracefully.",
+      "Ensure locale switching is easy to find and clearly reflected in the UI.",
+      "Use notifications for meaningful events, not routine noise."
+    ],
+    "recommendations": [
+      "Use Tailwind CSS for styling — map tokens to Tailwind config or utility classes directly.",
+      "Maintain a shared component library in src/components/ui/.",
+      "Document component usage with prop types and examples.",
+      "Follow WAI-ARIA patterns for interactive components (modals, dropdowns, tabs)."
+    ],
+    "style_preset": "warm"
+  },
+  "risks": [
+    {
+      "title": "Traffic spikes",
+      "risk": "Public-facing traffic can fluctuate sharply.",
+      "impact": "The application may become unavailable or slow during peak traffic.",
+      "mitigation": "Use caching, CDN delivery, and capacity planning for anonymous traffic."
+    },
+    {
+      "title": "Content schema evolution",
+      "risk": "Content models may evolve after launch.",
+      "impact": "Schema changes can create migration and compatibility issues.",
+      "mitigation": "Introduce schema versioning and a migration strategy."
+    },
+    {
+      "title": "Media storage growth",
+      "risk": "Media assets can grow quickly over time.",
+      "impact": "Local storage may become insufficient or costly to manage.",
+      "mitigation": "Use object storage with lifecycle and retention rules."
+    },
+    {
+      "title": "Background job reliability",
+      "risk": "Automation depends on reliable job execution.",
+      "impact": "Important workflows may not run at the intended time.",
+      "mitigation": "Use a durable queue or reliable job persistence strategy."
+    },
+    {
+      "title": "Clock drift",
+      "risk": "Worker and database clocks may diverge.",
+      "impact": "Scheduled tasks may run too early or too late.",
+      "mitigation": "Use UTC timestamps and centralized scheduling logic."
+    },
+    {
+      "title": "Localization consistency",
+      "risk": "Translations and locale-specific formatting may drift across the application.",
+      "impact": "Users may experience inconsistent language, formatting, or fallback behavior.",
+      "mitigation": "Define locale ownership, fallback rules, and validation for translation resources."
+    },
+    {
+      "title": "Notification fatigue",
+      "risk": "Poorly tuned notifications can overwhelm users.",
+      "impact": "Important alerts may be ignored and trust in the system may drop.",
+      "mitigation": "Introduce notification preferences, priorities, and delivery rules."
+    }
+  ],
+  "diagram": {
+    "nodes": [
+      [
+        "cdn",
+        "cdn"
+      ],
+      [
+        "worker",
+        "worker"
+      ],
+      [
+        "frontend",
+        "frontend"
+      ],
+      [
+        "api",
+        "api"
+      ],
+      [
+        "database",
+        "database"
+      ]
+    ],
+    "edges": [
+      [
+        "frontend",
+        "api"
+      ],
+      [
+        "api",
+        "database"
+      ],
+      [
+        "worker",
+        "database"
+      ],
+      [
+        "cdn",
+        "frontend"
+      ]
+    ]
+  },
+  "project_structure": {
+    "root_type": "Next.js + node-api monorepo (single package.json)",
+    "ecosystem": "node",
+    "directories": [
+      {
+        "path": "src/app",
+        "purpose": "Next.js app router — route groups and pages"
+      },
+      {
+        "path": "src/app/(app)",
+        "purpose": "Admin/authenticated application routes"
+      },
+      {
+        "path": "src/app/api",
+        "purpose": "Next.js API routes or standalone API server"
+      },
+      {
+        "path": "src/components",
+        "purpose": "Shared React UI components"
+      },
+      {
+        "path": "src/components/ui",
+        "purpose": "Base UI primitives (Button, Input, Modal, etc.)"
+      },
+      {
+        "path": "src/lib",
+        "purpose": "Shared utilities, helpers, and business logic"
+      },
+      {
+        "path": "src/hooks",
+        "purpose": "Custom React hooks"
+      },
+      {
+        "path": "src/models",
+        "purpose": "Database models and schema definitions"
+      },
+      {
+        "path": "src/middleware",
+        "purpose": "Express/Fastify middleware (auth, logging, etc.)"
+      },
+      {
+        "path": "src/styles",
+        "purpose": "Global styles and Tailwind config"
+      },
+      {
+        "path": "docker",
+        "purpose": "Docker and docker-compose files"
+      },
+      {
+        "path": "src/app/(public)",
+        "purpose": "Public-facing routes"
+      },
+      {
+        "path": "src/app/(auth)",
+        "purpose": "Auth routes (login, register, etc.)"
+      },
+      {
+        "path": "src/jobs",
+        "purpose": "Background job definitions and scheduler"
+      },
+      {
+        "path": "docs/stories",
+        "purpose": "Story files for agent execution"
+      }
+    ],
+    "root_files": [
+      {
+        "path": "package.json",
+        "purpose": "Dependencies and npm scripts"
+      },
+      {
+        "path": "tsconfig.json",
+        "purpose": "TypeScript configuration"
+      },
+      {
+        "path": ".eslintrc.js",
+        "purpose": "ESLint configuration (or eslint.config.js)"
+      },
+      {
+        "path": ".prettierrc",
+        "purpose": "Prettier configuration"
+      },
+      {
+        "path": ".env.example",
+        "purpose": "Environment variable template"
+      },
+      {
+        "path": ".gitignore",
+        "purpose": "Git ignore rules"
+      },
+      {
+        "path": "docker-compose.yml",
+        "purpose": "Docker services (database, etc.)"
+      },
+      {
+        "path": "README.md",
+        "purpose": "Project documentation"
+      }
+    ]
+  },
+  "domain_model": {
+    "entities": [
+      {
+        "name": "Todo",
+        "description": "A task or action item owned by a user",
+        "fields": [
+          "title",
+          "description",
+          "completed",
+          "dueDate",
+          "priority",
+          "createdAt",
+          "updatedAt"
+        ],
+        "states": [
+          "pending",
+          "completed"
+        ],
+        "transitions": [
+          {
+            "from": "pending",
+            "to": "completed",
+            "actor": "owner"
+          },
+          {
+            "from": "completed",
+            "to": "pending",
+            "actor": "owner"
+          }
+        ],
+        "relationships": [
+          "belongs_to User"
+        ]
+      },
+      {
+        "name": "User",
+        "description": "An application user who owns todos",
+        "fields": [
+          "email",
+          "name",
+          "passwordHash",
+          "createdAt"
+        ],
+        "relationships": [
+          "has_many Todo"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "name": "user",
+        "can": [
+          "create_todo",
+          "read_own_todos",
+          "update_own_todo",
+          "delete_own_todo",
+          "toggle_todo_complete"
+        ]
+      }
+    ],
+    "auth_model": {
+      "strategy": "email_password",
+      "session": "jwt",
+      "mfa": false,
+      "provider": "custom"
+    },
+    "business_rules": [
+      "Users can only see and modify their own todos.",
+      "Toggling a todo marks it as completed or pending.",
+      "Deleting a todo is permanent (no soft-delete).",
+      "Todos are ordered by createdAt descending by default.",
+      "No roles or admin panel — single user type."
+    ]
+  },
+  "prd_intelligence": {
+    "problem_statement": "The system aims to solve a defined operational workflow by providing a structured backend and scalable architecture.",
+    "personas": [
+      {
+        "name": "Primary User",
+        "goal": "Accomplish core workflows provided by the application."
+      },
+      {
+        "name": "Administrator",
+        "goal": "Manage users and system configuration."
+      }
+    ],
+    "success_metrics": [
+      "Overdue work items are surfaced and addressed proactively.",
+      "Operational reports are generated automatically without manual data gathering.",
+      "System availability above 99.5%.",
+      "Public pages load under acceptable performance thresholds."
+    ],
+    "scope": {
+      "in_scope": [
+        "Core application workflows.",
+        "Authentication and access control.",
+        "Background job processing and automation.",
+        "Multi-language support."
+      ],
+      "out_of_scope": [
+        "Complex analytics dashboards not defined in the initial spec.",
+        "External integrations not required for core workflow."
+      ]
+    },
+    "assumptions": [
+      "Both internal teams and external clients will use the system with appropriate access controls.",
+      "Initial traffic will be moderate.",
+      "System will evolve after MVP validation.",
+      "Background job infrastructure will be available in the deployment environment."
+    ]
+  }
+}

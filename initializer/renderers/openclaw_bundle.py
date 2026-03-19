@@ -231,7 +231,7 @@ def _node_commands(stack: dict[str, Any], capabilities: list[str], deploy_target
 
     setup: dict[str, str] = {
         "install": "npm install",
-        "env": "cp .env.example .env.local",
+        "env": "test -f .env.local || cp .env.example .env.local",
     }
 
     if database == "postgres" and deploy_target in ("docker", "docker_and_k8s_later"):

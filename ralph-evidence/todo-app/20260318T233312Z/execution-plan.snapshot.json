@@ -1,0 +1,304 @@
+{
+  "total_stories": 24,
+  "phases": [
+    "bootstrap",
+    "features",
+    "product",
+    "domain",
+    "automation",
+    "operations"
+  ],
+  "phase_order": [
+    {
+      "phase": "bootstrap",
+      "description": "Project setup and infrastructure",
+      "count": 4
+    },
+    {
+      "phase": "features",
+      "description": "Core feature implementation",
+      "count": 6
+    },
+    {
+      "phase": "product",
+      "description": "Product shell and navigation",
+      "count": 4
+    },
+    {
+      "phase": "domain",
+      "description": "Domain-specific work features",
+      "count": 5
+    },
+    {
+      "phase": "automation",
+      "description": "Background jobs and automation",
+      "count": 3
+    },
+    {
+      "phase": "operations",
+      "description": "Monitoring, backups, operational setup",
+      "count": 2
+    }
+  ],
+  "stories": [
+    {
+      "id": "ST-007",
+      "title": "Initialize project repository",
+      "status": "pending",
+      "story_key": "bootstrap.repository",
+      "order": 1,
+      "phase": "bootstrap"
+    },
+    {
+      "id": "ST-008",
+      "title": "Setup database",
+      "status": "pending",
+      "story_key": "bootstrap.database",
+      "depends_on": [
+        "bootstrap.repository"
+      ],
+      "order": 2,
+      "phase": "bootstrap"
+    },
+    {
+      "id": "ST-009",
+      "title": "Setup backend service",
+      "status": "pending",
+      "story_key": "bootstrap.backend",
+      "depends_on": [
+        "bootstrap.database"
+      ],
+      "order": 3,
+      "phase": "bootstrap"
+    },
+    {
+      "id": "ST-010",
+      "title": "Create frontend application",
+      "status": "pending",
+      "story_key": "bootstrap.frontend",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 4,
+      "phase": "bootstrap"
+    },
+    {
+      "id": "ST-001",
+      "title": "Configure CDN",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.frontend"
+      ],
+      "order": 5,
+      "phase": "features"
+    },
+    {
+      "id": "ST-002",
+      "title": "Define CMS content model",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 6,
+      "phase": "features"
+    },
+    {
+      "id": "ST-005",
+      "title": "Add locale support",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 7,
+      "phase": "features"
+    },
+    {
+      "id": "ST-006",
+      "title": "Implement locale routing",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.frontend"
+      ],
+      "order": 8,
+      "phase": "features"
+    },
+    {
+      "id": "ST-011",
+      "title": "Implement authentication",
+      "status": "pending",
+      "story_key": "feature.authentication",
+      "depends_on": [
+        "bootstrap.backend",
+        "bootstrap.frontend"
+      ],
+      "order": 9,
+      "phase": "features"
+    },
+    {
+      "id": "ST-012",
+      "title": "Implement notification system",
+      "status": "pending",
+      "story_key": "feature.notifications",
+      "depends_on": [
+        "feature.authentication"
+      ],
+      "order": 10,
+      "phase": "features"
+    },
+    {
+      "id": "ST-019",
+      "title": "Implement Todo data model",
+      "status": "pending",
+      "story_key": "product.todo-model",
+      "depends_on": [
+        "bootstrap.database",
+        "feature.authentication"
+      ],
+      "order": 11,
+      "phase": "product"
+    },
+    {
+      "id": "ST-020",
+      "title": "Implement Todo CRUD API",
+      "status": "pending",
+      "story_key": "product.todo-api",
+      "depends_on": [
+        "product.todo-model"
+      ],
+      "order": 12,
+      "phase": "product"
+    },
+    {
+      "id": "ST-021",
+      "title": "Implement Todo list UI",
+      "status": "pending",
+      "story_key": "product.todo-ui",
+      "depends_on": [
+        "product.todo-api",
+        "bootstrap.frontend"
+      ],
+      "order": 13,
+      "phase": "product"
+    },
+    {
+      "id": "ST-022",
+      "title": "Implement Todo filtering and sorting",
+      "status": "pending",
+      "story_key": "product.todo-filtering",
+      "depends_on": [
+        "product.todo-ui"
+      ],
+      "order": 14,
+      "phase": "product"
+    },
+    {
+      "id": "ST-013",
+      "title": "Model deadlines and due dates",
+      "status": "pending",
+      "story_key": "product.deadlines",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 15,
+      "phase": "domain"
+    },
+    {
+      "id": "ST-014",
+      "title": "Implement progress tracking",
+      "status": "pending",
+      "story_key": "product.progress-tracking",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 16,
+      "phase": "domain"
+    },
+    {
+      "id": "ST-017",
+      "title": "Implement report generation",
+      "status": "pending",
+      "story_key": "product.report-generation",
+      "depends_on": [
+        "bootstrap.backend",
+        "bootstrap.frontend"
+      ],
+      "order": 17,
+      "phase": "domain"
+    },
+    {
+      "id": "ST-015",
+      "title": "Implement task assignment",
+      "status": "pending",
+      "story_key": "product.task-assignment",
+      "depends_on": [
+        "feature.authentication"
+      ],
+      "order": 18,
+      "phase": "domain"
+    },
+    {
+      "id": "ST-016",
+      "title": "Implement reminders",
+      "status": "pending",
+      "story_key": "product.reminders",
+      "depends_on": [
+        "product.deadlines"
+      ],
+      "order": 19,
+      "phase": "domain"
+    },
+    {
+      "id": "ST-003",
+      "title": "Setup job worker",
+      "status": "pending",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 20,
+      "phase": "automation"
+    },
+    {
+      "id": "ST-018",
+      "title": "Implement background automation jobs",
+      "status": "pending",
+      "story_key": "product.automation-jobs",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 21,
+      "phase": "automation"
+    },
+    {
+      "id": "ST-004",
+      "title": "Implement publishing scheduler",
+      "status": "pending",
+      "depends_on": [
+        "feature.draft-publish"
+      ],
+      "order": 22,
+      "phase": "automation"
+    },
+    {
+      "id": "ST-900",
+      "title": "Setup monitoring and logging",
+      "status": "pending",
+      "story_key": "operations.monitoring",
+      "depends_on": [
+        "bootstrap.backend"
+      ],
+      "order": 23,
+      "phase": "operations"
+    },
+    {
+      "id": "ST-901",
+      "title": "Implement backups",
+      "status": "pending",
+      "story_key": "operations.backups",
+      "depends_on": [
+        "bootstrap.database"
+      ],
+      "order": 24,
+      "phase": "operations"
+    }
+  ]
+}
