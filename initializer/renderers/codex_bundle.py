@@ -395,6 +395,9 @@ run_validation_command() {{
 # -------------------------------------------------------
 
 run_migrations() {{
+    local is_payload_backend=false
+    local output=""
+
     # Only run if node_modules exists (project has been installed)
     if [[ ! -d "$SCRIPT_DIR/node_modules" ]]; then
         return 0
@@ -403,6 +406,10 @@ run_migrations() {{
     # Only run if there's a database configured
     if [[ ! -f "$SCRIPT_DIR/docker-compose.yml" ]] && [[ -z "${{DATABASE_URI:-}}" ]]; then
         return 0
+    fi
+
+    if [[ -f "$SCRIPT_DIR/src/payload.config.ts" ]] || [[ -f "$SCRIPT_DIR/payload.config.ts" ]]; then
+        is_payload_backend=true
     fi
 
     # Only run if the migration command is available
@@ -444,8 +451,14 @@ run_migrations() {{
     fi
 
     # Run the migration command
-    if eval "cd \\"$SCRIPT_DIR\\" && $MIGRATION_CMD" 2>&1; then
-        echo "  Migrations: OK"
+    if output=$(eval "cd \\"$SCRIPT_DIR\\" && $MIGRATION_CMD" 2>&1); then
+        if [[ "$is_payload_backend" == true ]] && printf '%s' "$output" | grep -q "__SPECWRIGHT_PAYLOAD_MIGRATIONS__:no-pending"; then
+            echo "  Migrations: SKIP (no pending Payload migrations)"
+        elif [[ "$is_payload_backend" == true ]] && printf '%s' "$output" | grep -q "__SPECWRIGHT_PAYLOAD_MIGRATIONS__:dev-push"; then
+            echo "  Migrations: WARN (skipped Payload migrate: dev-mode push marker found in payload_migrations)"
+        else
+            echo "  Migrations: OK"
+        fi
     else
         echo "  Migrations: WARN (command failed, may need manual intervention)"
         # Don't fail the story — the agent may not have created new migrations

@@ -154,6 +154,7 @@ def test_payload_package_json_has_payload_deps(tmp_path):
     assert "@payloadcms/richtext-lexical" in pkg["dependencies"]
     assert "@payloadcms/db-postgres" in pkg["dependencies"]
     assert "graphql" in pkg["dependencies"]
+    assert "pg" in pkg["dependencies"]
     assert "sharp" in pkg["dependencies"]
 
 
@@ -164,9 +165,9 @@ def test_payload_package_json_has_disable_transpile_scripts(tmp_path):
     scripts = pkg["scripts"]
 
     assert scripts["generate:types"] == "payload --disable-transpile generate:types"
-    assert scripts["db:migrate"] == "payload --disable-transpile migrate"
-    assert scripts["db:migrate:create"] == "payload --disable-transpile migrate:create"
-    assert scripts["db:migrate:status"] == "payload --disable-transpile migrate:status"
+    assert scripts["db:migrate"] == "node ./scripts/payload-migrations.mjs migrate"
+    assert scripts["db:migrate:create"] == "node ./scripts/payload-migrations.mjs create"
+    assert scripts["db:migrate:status"] == "node ./scripts/payload-migrations.mjs status"
 
 
 def test_payload_package_json_pins_next_version(tmp_path):
@@ -198,11 +199,20 @@ def test_payload_creates_payload_specific_files(tmp_path):
 
     assert (tmp_path / "src/payload.config.ts").exists()
     assert (tmp_path / "src/collections/Users.ts").exists()
+    assert (tmp_path / "src/__tests__/setup-env.ts").exists()
     assert (tmp_path / "src/app/(payload)/admin/[[...segments]]/page.tsx").exists()
     assert (tmp_path / "src/app/(payload)/admin/[[...segments]]/not-found.tsx").exists()
     assert (tmp_path / "src/app/(payload)/layout.tsx").exists()
     assert (tmp_path / "src/app/(payload)/custom.scss").exists()
     assert (tmp_path / "src/app/(payload)/importMap.ts").exists()
+    assert (tmp_path / "scripts/payload-migrations.mjs").exists()
+
+
+def test_node_api_has_no_payload_bootstrap_helpers(tmp_path):
+    write_scaffold(tmp_path, _make_spec())
+
+    assert not (tmp_path / "src/__tests__/setup-env.ts").exists()
+    assert not (tmp_path / "scripts/payload-migrations.mjs").exists()
 
 
 def test_payload_admin_page_imports_importmap_from_correct_path(tmp_path):
@@ -505,6 +515,14 @@ def test_vitest_config_targets_generated_smoke_tests(tmp_path):
     assert 'environment: "node"' in content
     assert 'src/**/*.test.ts' in content
     assert 'passWithNoTests: false' in content
+    assert 'setupFiles:' not in content
+
+
+def test_payload_vitest_config_loads_env_setup_file(tmp_path):
+    write_scaffold(tmp_path, _payload_spec())
+
+    content = (tmp_path / "vitest.config.ts").read_text()
+    assert 'setupFiles: ["./src/__tests__/setup-env.ts"]' in content
 
 
 def test_eslint_config_uses_eslintrc_compat(tmp_path):
@@ -600,6 +618,30 @@ def test_env_local_generated_for_sqlite(tmp_path):
     assert (tmp_path / ".env.local").exists()
     content = (tmp_path / ".env.local").read_text()
     assert "file:./" in content
+
+
+def test_payload_setup_env_loads_dotenv_local_via_node_api(tmp_path):
+    write_scaffold(tmp_path, _payload_spec())
+
+    content = (tmp_path / "src/__tests__/setup-env.ts").read_text()
+    assert 'process.loadEnvFile(localEnvPath);' in content
+    assert 'fs.existsSync(localEnvPath)' in content
+
+
+def test_payload_migration_helper_loads_env_normalizes_type_imports_and_emits_sentinels(tmp_path):
+    write_scaffold(tmp_path, _payload_spec())
+
+    content = (tmp_path / "scripts/payload-migrations.mjs").read_text()
+    assert 'process.loadEnvFile(localEnvPath);' in content
+    assert 'type ${withoutType}' in content
+    assert '@payloadcms/db-postgres' in content
+    assert 'const SENTINEL_PREFIX = "__SPECWRIGHT_PAYLOAD_MIGRATIONS__:";' in content
+    assert 'emitSentinel("no-pending"' in content
+    assert 'emitSentinel(' in content
+    assert '"dev-push"' in content
+    assert 'payload_migrations contains a dev-mode push marker' in content
+    assert 'SELECT name, batch FROM "payload_migrations"' in content
+    assert 'node ./scripts/payload-migrations.mjs <migrate|create|status>' in content
 
 
 # -------------------------------------------------------

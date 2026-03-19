@@ -452,6 +452,19 @@ def test_codex_ralph_sh_reads_validation_contract_from_commands_json(tmp_path):
     assert "npm run lint --if-present" not in content
 
 
+def test_codex_ralph_sh_handles_payload_migration_sentinels(tmp_path):
+    spec = _make_spec(stack={"frontend": "nextjs", "backend": "payload", "database": "postgres"})
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert 'local is_payload_backend=false' in content
+    assert 'output=$(eval "cd \\"$SCRIPT_DIR\\" && $MIGRATION_CMD" 2>&1)' in content
+    assert '__SPECWRIGHT_PAYLOAD_MIGRATIONS__:no-pending' in content
+    assert '__SPECWRIGHT_PAYLOAD_MIGRATIONS__:dev-push' in content
+    assert 'Migrations: SKIP (no pending Payload migrations)' in content
+    assert 'Migrations: WARN (skipped Payload migrate: dev-mode push marker found in payload_migrations)' in content
+
+
 # -------------------------------------------------------
 # QUALITY-001: AGENTS.md quality improvements
 # -------------------------------------------------------

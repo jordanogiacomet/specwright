@@ -1,7 +1,7 @@
 # Specwright — Full Repository Analysis
 
 **Date**: 2026-03-18 (updated 2026-03-19)
-**Test suite**: 337/337 passed — 163 new tests added across 8 sessions
+**Test suite**: 344/344 passed
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow), `output/editorial-control-center` (Payload editorial)
 
 ### Handoff For Future Agents
@@ -59,8 +59,74 @@ When the main agent makes code changes, record the new state here before moving 
 | QUALITY-002 | FIXED | CMS/editorial stories now have explicit content-model ownership, tighter dependencies, concrete preview/public/scheduler contracts, and less ambiguous storage/role language |
 | IMP-012 | FIXED | i18n capability stories now have stable `story_key`s and CMS i18n no longer overlaps with the generic `feature.i18n-setup` story |
 | BUG-018 | FIXED | Generated Vitest config now forces automatic JSX runtime so Next App Router TSX smoke tests do not fail with `React is not defined` |
+| BUG-019 | FIXED | `ralph.sh` now writes Codex prompts with literal-safe blocks instead of unquoted heredocs / command substitutions that could execute story markdown backticks in the shell |
+| BUG-020 | FIXED | Payload scaffold now routes `db:migrate*` through a helper that normalizes generated migration imports so `MigrateUpArgs` / `MigrateDownArgs` are emitted as `type` imports before Payload loads them under ESM |
+| BUG-021 | FIXED | Payload scaffold now generates `src/__tests__/setup-env.ts` and wires Vitest `setupFiles` so `.env.local` loads before importing `payload.config`, without weakening runtime `DATABASE_URI` requirements |
+| BUG-022 | FIXED | Payload scaffold now uses a migration wrapper plus `ralph.sh` sentinel handling so the post-story safety-net migrate step stays non-interactive and skips safely on dev-push markers or when no migrations are pending |
 
 ---
+
+## Session 11 — Payload Migration / Env Backport For Editorial Loop (Completed, 2026-03-19)
+
+### What was fixed
+
+1. **Payload migration scripts now route through a generated helper (BUG-020, BUG-022)**
+   - `initializer/renderers/scaffold_engine.py`
+   - Payload projects no longer scaffold raw `payload --disable-transpile migrate*` scripts directly for `db:migrate`, `db:migrate:create`, and `db:migrate:status`.
+   - The scaffold now generates `scripts/payload-migrations.mjs` and points the three public npm scripts at it, preserving the external command contract (`npm run db:migrate*`).
+   - The helper:
+     - loads `.env.local` before invoking Payload;
+     - rewrites generated `src/lib/migrations/*.ts` imports so `MigrateUpArgs` / `MigrateDownArgs` are always emitted as `type` imports;
+     - checks pending migration files against `payload_migrations`;
+     - emits explicit sentinels for `no-pending` and `dev-push` instead of letting `payload migrate` block on a confirmation prompt after dev-mode schema pushes.
+   - Added direct `pg` dependency to the Payload scaffold because the generated helper queries `payload_migrations` safely through a Postgres client.
+
+2. **Payload Vitest bootstrap now loads env before `payload.config` (BUG-021)**
+   - `initializer/renderers/scaffold_engine.py`
+   - `_vitest_config(...)` is now stack-aware and adds `setupFiles: ["./src/__tests__/setup-env.ts"]` only for Payload backends.
+   - Payload scaffolds now generate `src/__tests__/setup-env.ts`, which loads `.env.local` via `process.loadEnvFile(...)` when present.
+   - Runtime validation remains strict: `src/lib/db.ts` / `payload.config.ts` still rely on `DATABASE_URI` being present at execution time; the change only ensures test bootstrap order is correct.
+
+3. **`ralph.sh` now interprets Payload migration sentinels**
+   - `initializer/renderers/codex_bundle.py`
+   - `run_migrations()` still behaves generically for non-Payload stacks.
+   - For Payload projects, it now inspects wrapper output and reports:
+     - `Migrations: SKIP` when no Payload migrations are pending;
+     - `Migrations: WARN` when a dev-mode push marker (`batch = -1`) is present and the safety-net migrate step is skipped deliberately;
+     - `Migrations: OK` for real successful runs.
+   - This keeps Ralph non-interactive for the editorial/CMS flow without changing the commands shown to the agent in `AGENTS.md`.
+
+4. **Regression coverage was expanded**
+   - `tests/unit/test_scaffold_engine.py`
+   - Updated Payload script assertions to the new wrapper contract.
+   - Added coverage for:
+     - Payload-only `setupFiles`;
+     - generated `src/__tests__/setup-env.ts`;
+     - generated `scripts/payload-migrations.mjs`;
+     - helper logic strings for env loading, type-import normalization, and sentinel handling.
+   - `tests/unit/test_bundles.py`
+   - Added coverage that generated `ralph.sh` recognizes the new Payload sentinels and surfaces `SKIP` / `WARN` correctly.
+
+### Validation performed
+
+1. **Focused scaffold + bundle regression**
+   - `.venv/bin/python -m pytest tests/unit/test_scaffold_engine.py tests/unit/test_bundles.py -q`
+   - Result: `93 passed`
+
+2. **Full repository suite**
+   - `.venv/bin/python -m pytest -q`
+   - Result: `344 passed in 5.60s`
+
+3. **Static runtime evidence check**
+   - Re-read the already-generated `output/editorial-control-center` hotfix evidence used during the live loop:
+     - `src/__tests__/setup-env.ts` already matched the env-bootstrap approach now backported to the scaffold;
+     - `src/lib/migrations/20260319_194516.ts` already showed the `type`-import form that the new helper now enforces automatically.
+   - No new regeneration of `output/editorial-control-center` was performed in this pass; the fix was implemented in the generator origin and validated via unit coverage.
+
+### Remaining risk
+
+- The generated Payload migration helper currently assumes Postgres-backed Payload projects and checks `public.payload_migrations`; that matches the editorial scaffold and current generator contract, but a future non-public-schema Payload/Postgres variant would need a schema-aware preflight.
+- Existing already-generated projects do not receive the new wrapper or Vitest bootstrap automatically; they need regeneration or manual patching to pick up these fixes.
 
 ## Session 6 — Pipeline Reliability Contract (Completed, 2026-03-19)
 
@@ -269,6 +335,86 @@ This session closes the validation/test pipeline contract itself. The separate `
 ### Remaining limitation
 
 - The Next.js build still prints a lockfile-selection warning because the repo root also has a `package-lock.json`. This is noisy but not a blocker for the generated project or the `ralph` loop.
+
+## Session 10 — Live Ralph Loop Findings On Editorial Control Center (In Progress, 2026-03-19)
+
+### What was fixed
+
+1. **Codex prompt generation in `ralph.sh` is now literal-safe**
+   - `initializer/renderers/codex_bundle.py`
+   - Root cause: `run_codex()` and `run_codex_retry()` built prompt files with unquoted heredocs and injected story markdown / retry errors inline. Story files such as `ST-004` contain backticks (for commands like `npm run db:migrate:create`), so bash could execute story markdown while constructing the prompt.
+   - Real symptom during live loop:
+     - `./ralph.sh --from ST-004` showed Payload / Node warnings before Codex produced any useful output
+     - `.ralph-prompt.*.md` and `.codex-last-message.*.txt` from failed attempts were empty
+     - `progress.txt` showed repeated `START` lines and a retry with `Codex execution failed`
+   - Fix:
+     - prompt files are now assembled with `printf`, literal quoted heredocs, and direct `cat "$STORIES_DIR/$story_id.md"` blocks
+     - retry error text is inserted with `printf '```\\n%s\\n```\\n\\n' "$previous_error"` instead of being interpolated inside an unquoted heredoc
+
+2. **Regression coverage added for prompt safety**
+   - `tests/unit/test_bundles.py`
+   - Added assertions that generated `ralph.sh` no longer uses the old `cat > "$prompt_file" <<PROMPT_EOF` pattern with inline `$(if [[ -f ... ]]` story interpolation, and that retry errors are written via `printf`.
+
+3. **Generated project was patched so the live loop could continue**
+   - `output/editorial-control-center/ralph.sh`
+   - Applied the same literal-safe prompt fix to the already-generated project before resuming the live loop from `ST-004`.
+
+### Validation performed
+
+1. **Focused bundle regression**
+   - `.venv/bin/python -m pytest tests/unit/test_bundles.py -q`
+   - Result: `32 passed`
+
+2. **Full repository suite**
+   - `.venv/bin/python -m pytest -q`
+   - Result: `339 passed in 7.82s`
+
+3. **Live editorial loop evidence (`output/editorial-control-center`)**
+   - Resumed `./ralph.sh --from ST-004` outside the sandbox
+   - Confirmed the loop progressed past the previous prompt-construction failure
+   - Observed Codex complete the story work for `ST-004` and report green story-local validation:
+     - `DATABASE_URI=postgresql://postgres:postgres@localhost:5480/editorial_control_center npm run db:migrate` — PASS
+     - `DATABASE_URI=postgresql://postgres:postgres@localhost:5480/editorial_control_center npm run db:migrate:status` — PASS
+     - live `verifyDatabaseConnection()` call — PASS
+     - `npm test` — PASS
+     - `npm run lint` — PASS
+     - `npm run build` — PASS
+
+### New runtime findings from the live loop
+
+1. **Payload migration file import bug in generated project**
+   - `output/editorial-control-center/src/lib/migrations/20260319_194516.ts`
+   - The migration originally imported `MigrateUpArgs` / `MigrateDownArgs` as runtime values from `@payloadcms/db-postgres`.
+   - Real failure:
+     - `SyntaxError: The requested module '@payloadcms/db-postgres' does not provide an export named 'MigrateDownArgs'`
+   - The live story fixed this in-project by converting those imports to `type` imports.
+   - This was backported to the generator in **Session 11**.
+
+2. **Vitest env bootstrap gap for Payload server config**
+   - `output/editorial-control-center/src/__tests__/setup-env.ts`
+   - `output/editorial-control-center/vitest.config.ts`
+   - After `ST-004` introduced a shared DB helper, `npm test` failed because `payload.config.ts` imported DB config before `DATABASE_URI` was loaded in the test environment.
+   - The live story fixed this in-project with a Vitest `setupFiles` entry that loads `.env.local`.
+   - This was backported to the generator in **Session 11**.
+
+3. **`run_migrations()` is still interactive / noisy for Payload**
+   - `output/editorial-control-center/ralph.sh`
+   - After the story completed, Ralph’s safety-net migration step blocked on:
+     - `Would you like to proceed? (y/N)`
+   - After manual confirmation, the step warned because the initial migration was rerun against a state where Payload had already pushed schema changes:
+     - `type "enum_users_role" already exists`
+   - Ralph downgraded this to `Migrations: WARN`, so the loop did not hard-fail, but this remained a real automation bug for non-interactive runs at the time.
+   - This was backported to the generator in **Session 11**.
+
+4. **Local environment conflict, not a generator bug**
+   - The default Postgres port `5478` was already occupied on this machine during the live run.
+   - The Codex story used `POSTGRES_PORT=5480` for validation without changing the checked-in defaults.
+   - This is environmental noise, not a Specwright bug.
+
+### Remaining limitation
+
+- At the time of Session 10, the live loop still exposed three generator gaps. Those gaps were subsequently backported in **Session 11** above.
+- `progress.txt` in `output/editorial-control-center` still reflects the interrupted historical loop state until that generated project is regenerated or patched manually.
 
 ## Session 4 — Editorial Validation and Payload v3.79 Compatibility (2026-03-19)
 
