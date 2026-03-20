@@ -37,10 +37,60 @@ def _get_decision_signals(spec: dict[str, Any]) -> dict[str, Any]:
 # Execution plan
 # -------------------------------------------------------------------
 
+_PHASE_PRIORITY = {
+    "bootstrap": 0,
+    "features": 1,
+    "product": 2,
+    "domain": 3,
+    "automation": 4,
+    "operations": 5,
+}
+
+
+def _classify_phase(story_id: str, story_key: str, title: str) -> str:
+    """Assign a story to a phase for display/annotation purposes."""
+    if story_key.startswith("bootstrap."):
+        return "bootstrap"
+    if story_key.startswith("feature.") or story_key.startswith("infra."):
+        return "features"
+    if story_key.startswith("product."):
+        if "automation" in story_key or "scheduled" in story_key:
+            return "automation"
+        if any(
+            kw in story_key
+            for kw in (
+                "deadlines", "progress", "task-assignment",
+                "reminders", "report", "approvals", "team-visibility",
+            )
+        ):
+            return "domain"
+        return "product"
+    if story_key.startswith("operations."):
+        return "operations"
+    if story_id in ("ST-900", "ST-901") or "monitoring" in title.lower() or "backup" in title.lower():
+        return "operations"
+    lower_title = title.lower()
+    if any(kw in lower_title for kw in ("locale", "i18n", "translation")):
+        return "features"
+    if any(kw in lower_title for kw in ("cms", "content model")):
+        return "features"
+    if any(kw in lower_title for kw in ("cdn", "public site")):
+        return "features"
+    if any(kw in lower_title for kw in ("worker", "scheduler", "automation", "scheduled")):
+        return "automation"
+    return "features"
+
+
 def _build_execution_plan(spec: dict[str, Any]) -> dict[str, Any]:
     """Build an ordered execution plan from stories.
 
-    Groups stories into phases:
+    Uses topological sort to respect dependency ordering.  Stories are
+    annotated with phases for display, but execution order is driven
+    entirely by dependencies.  Within each "available" batch (stories
+    whose dependencies are all satisfied), ties are broken by phase
+    priority then story ID for determinism.
+
+    Phases (for annotation):
     1. bootstrap — repository, database, backend, frontend setup
     2. features — authentication, roles, media-library, etc.
     3. product — product-shape stories (dashboard, portal, backoffice)
@@ -50,14 +100,9 @@ def _build_execution_plan(spec: dict[str, Any]) -> dict[str, Any]:
     """
     stories = spec.get("stories", [])
 
-    phases = {
-        "bootstrap": [],
-        "features": [],
-        "product": [],
-        "domain": [],
-        "automation": [],
-        "operations": [],
-    }
+    # Build entries with phase annotation
+    entries: dict[str, dict[str, Any]] = {}
+    key_to_id: dict[str, str] = {}
 
     for story in stories:
         if not isinstance(story, dict):
@@ -67,112 +112,86 @@ def _build_execution_plan(spec: dict[str, Any]) -> dict[str, Any]:
         story_key = story.get("story_key", "")
         title = story.get("title", "")
 
-        entry = {
+        phase = _classify_phase(story_id, story_key, title)
+
+        entry: dict[str, Any] = {
             "id": story_id,
             "title": title,
             "status": "pending",
+            "phase": phase,
         }
         if story_key:
             entry["story_key"] = story_key
+            key_to_id[story_key] = story_id
 
         depends_on = story.get("depends_on")
         if isinstance(depends_on, list) and depends_on:
             entry["depends_on"] = depends_on
 
-        if story_key.startswith("bootstrap."):
-            phases["bootstrap"].append(entry)
-        elif story_key.startswith("feature."):
-            phases["features"].append(entry)
-        elif story_key.startswith("product."):
-            if "automation" in story_key or "scheduled" in story_key:
-                phases["automation"].append(entry)
-            else:
-                if any(
-                    kw in story_key
-                    for kw in (
-                        "deadlines", "progress", "task-assignment",
-                        "reminders", "report", "approvals", "team-visibility",
-                    )
-                ):
-                    phases["domain"].append(entry)
-                else:
-                    phases["product"].append(entry)
-        elif story_id in ("ST-900", "ST-901") or "monitoring" in title.lower() or "backup" in title.lower():
-            phases["operations"].append(entry)
-        else:
-            lower_title = title.lower()
-            if any(kw in lower_title for kw in ("locale", "i18n", "translation")):
-                phases["features"].append(entry)
-            elif any(kw in lower_title for kw in ("cms", "content model")):
-                phases["features"].append(entry)
-            elif any(kw in lower_title for kw in ("cdn", "public site")):
-                phases["features"].append(entry)
-            elif any(kw in lower_title for kw in ("worker", "scheduler", "automation", "scheduled")):
-                phases["automation"].append(entry)
-            else:
-                phases["features"].append(entry)
+        entries[story_id] = entry
 
-    # ---------------------------------------------------------------
-    # Sort stories within each phase by dependency order
-    # Stories that depend on feature.* come after stories that only
-    # depend on bootstrap.* within the features phase.
-    # ---------------------------------------------------------------
-
-    def _dependency_depth(entry: dict[str, Any]) -> int:
-        """Compute a sorting key based on dependency depth.
-
-        Stories with no depends_on or only bootstrap.* deps sort first (0).
-        Stories depending on feature.* sort by their dependency chain depth.
-        """
-        deps = entry.get("depends_on", [])
-        if not deps:
-            return 0
-
-        depth = 0
-        for dep in deps:
-            if dep.startswith("feature."):
-                # Find which feature it depends on and check that feature's deps
-                dep_depth = 1
-                # Look up the dependent story's own deps
-                for other in phases.get("features", []):
-                    other_key = other.get("story_key", "")
-                    if other_key == dep:
-                        other_deps = other.get("depends_on", [])
-                        if any(d.startswith("feature.") for d in other_deps):
-                            dep_depth = 2
-                        break
-                depth = max(depth, dep_depth)
-            elif dep.startswith("bootstrap."):
-                depth = max(depth, 0)
-            else:
-                depth = max(depth, 1)
-
-        return depth
-
-    for phase_name in phases:
-        phases[phase_name].sort(key=_dependency_depth)
-
+    # ------------------------------------------------------------------
+    # Topological sort — dependencies drive order, phases break ties
+    # ------------------------------------------------------------------
+    completed: set[str] = set()
     ordered: list[dict[str, Any]] = []
-    order = 1
 
-    for phase_name in ("bootstrap", "features", "product", "domain", "automation", "operations"):
-        phase_stories = phases[phase_name]
-        for entry in phase_stories:
-            entry["order"] = order
-            entry["phase"] = phase_name
-            ordered.append(entry)
-            order += 1
+    # Build a reverse map: for each story, which story_keys does it need?
+    def _deps_satisfied(entry: dict[str, Any]) -> bool:
+        deps = entry.get("depends_on", [])
+        for dep_key in deps:
+            dep_id = key_to_id.get(dep_key)
+            if dep_id and dep_id not in completed:
+                return False
+        return True
+
+    remaining = set(entries.keys())
+
+    while remaining:
+        available = [
+            sid for sid in remaining if _deps_satisfied(entries[sid])
+        ]
+
+        if not available:
+            # Remaining stories have unresolvable deps — append them
+            # in phase order so the loop can still attempt them.
+            available = sorted(
+                remaining,
+                key=lambda sid: (
+                    _PHASE_PRIORITY.get(entries[sid]["phase"], 99),
+                    sid,
+                ),
+            )
+
+        # Sort available batch by phase priority then story ID
+        available.sort(
+            key=lambda sid: (
+                _PHASE_PRIORITY.get(entries[sid]["phase"], 99),
+                sid,
+            ),
+        )
+
+        for sid in available:
+            remaining.discard(sid)
+            completed.add(sid)
+            ordered.append(entries[sid])
+
+    # Assign sequential order numbers
+    phase_counts: dict[str, int] = {}
+    for idx, entry in enumerate(ordered, start=1):
+        entry["order"] = idx
+        phase_counts[entry["phase"]] = phase_counts.get(entry["phase"], 0) + 1
 
     return {
         "total_stories": len(ordered),
-        "phases": list(phases.keys()),
+        "phases": list(_PHASE_PRIORITY.keys()),
         "phase_order": [
-            {"phase": "bootstrap", "description": "Project setup and infrastructure", "count": len(phases["bootstrap"])},
-            {"phase": "features", "description": "Core feature implementation", "count": len(phases["features"])},
-            {"phase": "product", "description": "Product shell and navigation", "count": len(phases["product"])},
-            {"phase": "domain", "description": "Domain-specific work features", "count": len(phases["domain"])},
-            {"phase": "automation", "description": "Background jobs and automation", "count": len(phases["automation"])},
-            {"phase": "operations", "description": "Monitoring, backups, operational setup", "count": len(phases["operations"])},
+            {"phase": "bootstrap", "description": "Project setup and infrastructure", "count": phase_counts.get("bootstrap", 0)},
+            {"phase": "features", "description": "Core feature implementation", "count": phase_counts.get("features", 0)},
+            {"phase": "product", "description": "Product shell and navigation", "count": phase_counts.get("product", 0)},
+            {"phase": "domain", "description": "Domain-specific work features", "count": phase_counts.get("domain", 0)},
+            {"phase": "automation", "description": "Background jobs and automation", "count": phase_counts.get("automation", 0)},
+            {"phase": "operations", "description": "Monitoring, backups, operational setup", "count": phase_counts.get("operations", 0)},
         ],
         "stories": ordered,
     }

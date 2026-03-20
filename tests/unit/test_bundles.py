@@ -182,16 +182,80 @@ def test_openclaw_bundle_execution_plan_has_correct_phases(tmp_path):
     assert "operations" in plan["phases"]
 
     stories = plan["stories"]
-    phases_in_order = [s["phase"] for s in stories]
 
-    bootstrap_indices = [i for i, p in enumerate(phases_in_order) if p == "bootstrap"]
-    feature_indices = [i for i, p in enumerate(phases_in_order) if p == "features"]
-    ops_indices = [i for i, p in enumerate(phases_in_order) if p == "operations"]
+    # Each story should have a phase annotation
+    for story in stories:
+        assert "phase" in story
 
-    if bootstrap_indices and feature_indices:
-        assert max(bootstrap_indices) < min(feature_indices)
-    if feature_indices and ops_indices:
-        assert max(feature_indices) < min(ops_indices)
+    # Bootstrap stories should generally come early
+    bootstrap_indices = [i for i, s in enumerate(stories) if s["phase"] == "bootstrap"]
+    if bootstrap_indices:
+        assert min(bootstrap_indices) == 0
+
+
+def test_openclaw_bundle_execution_plan_respects_dependencies(tmp_path):
+    """Dependencies must be scheduled before their dependents."""
+    spec = _make_spec()
+    write_openclaw_bundle(tmp_path, spec)
+
+    plan = json.loads((tmp_path / ".openclaw" / "execution-plan.json").read_text())
+    stories = plan["stories"]
+
+    # Build order map: story_key -> order
+    key_to_order = {}
+    for s in stories:
+        if "story_key" in s:
+            key_to_order[s["story_key"]] = s["order"]
+
+    # Every dependency must have a lower order than its dependent
+    for s in stories:
+        for dep_key in s.get("depends_on", []):
+            if dep_key in key_to_order:
+                assert key_to_order[dep_key] < s["order"], (
+                    f"{s['id']} (order {s['order']}) depends on {dep_key} "
+                    f"(order {key_to_order[dep_key]}) but runs before it"
+                )
+
+
+def test_openclaw_bundle_execution_plan_cross_phase_deps(tmp_path):
+    """Product stories that are depended on by feature stories must run first."""
+    spec = _make_spec(
+        stories=[
+            {
+                "id": "ST-001",
+                "story_key": "bootstrap.repository",
+                "title": "Initialize project repository",
+                "depends_on": [],
+            },
+            {
+                "id": "ST-002",
+                "story_key": "bootstrap.backend",
+                "title": "Setup backend",
+                "depends_on": ["bootstrap.repository"],
+            },
+            {
+                "id": "ST-010",
+                "story_key": "product.cms-content-model",
+                "title": "Define CMS content model",
+                "depends_on": ["bootstrap.backend"],
+            },
+            {
+                "id": "ST-011",
+                "story_key": "feature.media-library",
+                "title": "Implement media library",
+                "depends_on": ["product.cms-content-model"],
+            },
+        ],
+    )
+    write_openclaw_bundle(tmp_path, spec)
+
+    plan = json.loads((tmp_path / ".openclaw" / "execution-plan.json").read_text())
+    stories = plan["stories"]
+
+    key_to_order = {s["story_key"]: s["order"] for s in stories if "story_key" in s}
+
+    # product.cms-content-model must come before feature.media-library
+    assert key_to_order["product.cms-content-model"] < key_to_order["feature.media-library"]
 
 
 def test_openclaw_bundle_execution_plan_all_stories_pending(tmp_path):
