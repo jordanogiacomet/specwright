@@ -24,6 +24,7 @@ def _render_story(story):
     depends_on = story.get("depends_on", [])
     validation = story.get("validation", {})
     story_key = story.get("story_key", "")
+    execution = story.get("execution", {})
 
     lines = []
 
@@ -34,6 +35,18 @@ def _render_story(story):
     if story_key:
         lines.append(f"**Story key:** `{story_key}`")
         lines.append("")
+
+    if execution:
+        tracks = execution.get("tracks", [])
+        contract_domains = execution.get("contract_domains", [])
+
+        if tracks:
+            lines.append("**Execution tracks:** " + ", ".join(f"`{track}`" for track in tracks))
+            lines.append("")
+
+        if contract_domains:
+            lines.append("**Contract domains:** " + ", ".join(f"`{domain}`" for domain in contract_domains))
+            lines.append("")
 
     # --- Description ---
     lines.append("## Description")

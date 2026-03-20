@@ -186,6 +186,8 @@ The ralph.sh script will tell you which story to implement.
 - `PRD.md` — product requirements
 - `architecture.md` — system components and decisions
 - `decisions.md` — stable architectural decisions
+- `.openclaw/api-contract.json` — shared frontend/backend contract for parallel loops
+- `.openclaw/shared-plan.json`, `.openclaw/frontend-plan.json`, `.openclaw/backend-plan.json`, `.openclaw/integration-plan.json` — loop-specific plans
 - `docs/stories/` — all story definitions
 
 ## Scope boundaries
@@ -194,6 +196,7 @@ The ralph.sh script will tell you which story to implement.
 - Do NOT redesign the architecture
 - Do NOT add features not listed in the spec
 - Do NOT skip to later stories — implement only what is asked
+- Respect `.openclaw/api-contract.json` when a slice is running in `frontend`, `backend`, or `integration` mode
 - Do NOT create files in `src/pages/` — this project uses the App Router (`src/app/`) exclusively
 - Use environment variable names exactly as defined in `.env.example` — do NOT rename or invent alternatives (e.g. use `NEXT_PUBLIC_API_URL` not `NEXT_PUBLIC_API_BASE_URL`)
 {structure_section}{domain_section}
@@ -268,17 +271,20 @@ def _build_ralph_sh(spec: dict[str, Any]) -> str:
     return f'''#!/usr/bin/env bash
 set -euo pipefail
 
-# ralph.sh — Story-by-story execution loop for {project_name}
-# Usage: ./ralph.sh [--dry-run] [--from ST-XXX]
-#
-# This script reads .openclaw/execution-plan.json, finds the next
-# pending story, builds a prompt file, and runs Codex CLI to implement it.
-# After each story, it runs migrations and validation, then records progress.
+# ralph.sh — Parallel contract-first execution loop for {project_name}
+# Usage: ./ralph.sh [--dry-run] [--from ST-XXX|FE-ST-XXX] [--track shared|frontend|backend|integration|all]
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLAN_FILE="$SCRIPT_DIR/.openclaw/execution-plan.json"
+API_CONTRACT_FILE="$SCRIPT_DIR/.openclaw/api-contract.json"
+SHARED_PLAN_FILE="$SCRIPT_DIR/.openclaw/shared-plan.json"
+FRONTEND_PLAN_FILE="$SCRIPT_DIR/.openclaw/frontend-plan.json"
+BACKEND_PLAN_FILE="$SCRIPT_DIR/.openclaw/backend-plan.json"
+INTEGRATION_PLAN_FILE="$SCRIPT_DIR/.openclaw/integration-plan.json"
 COMMANDS_FILE="$SCRIPT_DIR/.openclaw/commands.json"
 PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
+TRACK_PROGRESS_DIR="$SCRIPT_DIR/.openclaw/progress"
+LOCKS_DIR="$SCRIPT_DIR/.openclaw/locks"
 STORIES_DIR="$SCRIPT_DIR/docs/stories"
 MIGRATION_CMD="{migration_cmd}"
 MIGRATION_CREATE="{migration_create}"
@@ -288,10 +294,11 @@ CODEX_EFFORT="${{CODEX_EFFORT:-medium}}"
 
 DRY_RUN=false
 START_FROM=""
+TRACK="all"
+MAX_RETRIES=2
 
-# Parse arguments
 while [[ $# -gt 0 ]]; do
-    case $1 in
+    case "$1" in
         --dry-run)
             DRY_RUN=true
             shift
@@ -300,22 +307,17 @@ while [[ $# -gt 0 ]]; do
             START_FROM="$2"
             shift 2
             ;;
+        --track)
+            TRACK="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: ./ralph.sh [--dry-run] [--from ST-XXX]"
+            echo "Usage: ./ralph.sh [--dry-run] [--from ST-XXX|FE-ST-XXX] [--track shared|frontend|backend|integration|all]"
             exit 1
             ;;
     esac
 done
-
-# -------------------------------------------------------
-# Dependency checks
-# -------------------------------------------------------
-
-if ! command -v npx &> /dev/null; then
-    echo "Error: npx not found. Install Node.js first."
-    exit 1
-fi
 
 if ! command -v jq &> /dev/null; then
     echo "Error: jq not found."
@@ -323,23 +325,22 @@ if ! command -v jq &> /dev/null; then
     exit 1
 fi
 
-if [[ ! -f "$PLAN_FILE" ]]; then
-    echo "Error: execution-plan.json not found at $PLAN_FILE"
-    echo "Run 'initializer new' first to generate the project."
-    exit 1
-fi
+for required_file in "$PLAN_FILE" "$API_CONTRACT_FILE" "$SHARED_PLAN_FILE" "$FRONTEND_PLAN_FILE" "$BACKEND_PLAN_FILE" "$INTEGRATION_PLAN_FILE" "$COMMANDS_FILE"; do
+    if [[ ! -f "$required_file" ]]; then
+        echo "Error: required execution artifact not found: $required_file"
+        echo "Run 'initializer prepare' first to regenerate the execution bundle."
+        exit 1
+    fi
+done
 
-if [[ ! -f "$COMMANDS_FILE" ]]; then
-    echo "Error: commands.json not found at $COMMANDS_FILE"
-    echo "Run 'initializer prepare' first to generate the execution bundle."
-    exit 1
-fi
-
-# -------------------------------------------------------
-# Auth check
-# -------------------------------------------------------
+mkdir -p "$TRACK_PROGRESS_DIR" "$LOCKS_DIR"
+touch "$PROGRESS_FILE"
 
 if [[ "$DRY_RUN" == false ]]; then
+    if ! command -v npx &> /dev/null; then
+        echo "Error: npx not found. Install Node.js first."
+        exit 1
+    fi
     if ! command -v codex &> /dev/null; then
         echo "Error: Codex CLI is not installed."
         echo ""
@@ -361,6 +362,11 @@ BUILD_CMD=$(jq -r '.commands.build // ""' "$COMMANDS_FILE")
 TYPECHECK_CMD=$(jq -r '.commands.typecheck // ""' "$COMMANDS_FILE")
 TEST_RUNNER=$(jq -r '.validation.test_runner // "none"' "$COMMANDS_FILE")
 REQUIRES_REAL_TESTS=$(jq -r '.validation.requires_real_tests // false' "$COMMANDS_FILE")
+
+track_progress_file() {{
+    local track="$1"
+    echo "$TRACK_PROGRESS_DIR/$track.txt"
+}}
 
 validation_policy_contains() {{
     local field="$1"
@@ -387,6 +393,7 @@ run_validation_command() {{
     local label="$1"
     local command="$2"
     local pretty="$3"
+    local mode="$4"
     local output=""
 
     if [[ -z "$command" ]]; then
@@ -396,7 +403,7 @@ run_validation_command() {{
 
     if ! output=$(eval "$command" 2>&1); then
         echo "$pretty: FAIL"
-        if validation_policy_contains "block_on" "$label"; then
+        if [[ "$mode" == "block" ]] || ([[ "$mode" == "contract" ]] && validation_policy_contains "block_on" "$label"); then
             VALIDATION_OK=false
             append_validation_error "$pretty" "$output"
         fi
@@ -405,20 +412,88 @@ run_validation_command() {{
     fi
 }}
 
-# -------------------------------------------------------
-# Migration runner
-# -------------------------------------------------------
+acquire_lock() {{
+    local name="$1"
+    local lock_dir="$LOCKS_DIR/$name.lock"
+    while ! mkdir "$lock_dir" 2>/dev/null; do
+        sleep 1
+    done
+    echo "$lock_dir"
+}}
+
+release_lock() {{
+    local lock_dir="$1"
+    if [[ -n "$lock_dir" ]] && [[ -d "$lock_dir" ]]; then
+        rmdir "$lock_dir" 2>/dev/null || true
+    fi
+}}
+
+append_progress() {{
+    local track="$1"
+    local unit_id="$2"
+    local source_story_id="$3"
+    local state="$4"
+    local title="$5"
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local line="[$timestamp] [$track] $unit_id ($source_story_id) — $state — $title"
+    echo "$line" >> "$(track_progress_file "$track")"
+    echo "$line" >> "$PROGRESS_FILE"
+}}
+
+track_has_start_token() {{
+    local plan_file="$1"
+    local token="$2"
+    if [[ -z "$token" ]]; then
+        return 1
+    fi
+
+    jq -e --arg token "$token" \
+        '.stories[] | select(.id == $token or .source_story_id == $token)' \
+        "$plan_file" >/dev/null 2>&1
+}}
+
+track_unit_done() {{
+    local track="$1"
+    local unit_id="$2"
+    grep -q "$unit_id.*DONE" "$(track_progress_file "$track")" 2>/dev/null
+}}
+
+append_prompt_list() {{
+    local plan_file="$1"
+    local index="$2"
+    local field="$3"
+    local heading="$4"
+    local prefix="$5"
+    local items
+
+    items=$(jq -r ".stories[$index].$field[]?" "$plan_file")
+    if [[ -z "$items" ]]; then
+        return 0
+    fi
+
+    printf '## %s\\n\\n' "$heading"
+    while IFS= read -r item; do
+        [[ -n "$item" ]] || continue
+        printf '%s %s\\n' "$prefix" "$item"
+    done <<< "$items"
+    printf '\\n'
+}}
 
 run_migrations() {{
+    local track="$1"
+    local needs_migrations="$2"
     local is_payload_backend=false
     local output=""
 
-    # Only run if node_modules exists (project has been installed)
+    if [[ "$needs_migrations" != "true" ]] || [[ "$track" == "frontend" ]]; then
+        return 0
+    fi
+
     if [[ ! -d "$SCRIPT_DIR/node_modules" ]]; then
         return 0
     fi
 
-    # Only run if there's a database configured
     if [[ ! -f "$SCRIPT_DIR/docker-compose.yml" ]] && [[ -z "${{DATABASE_URI:-}}" ]]; then
         return 0
     fi
@@ -427,20 +502,14 @@ run_migrations() {{
         is_payload_backend=true
     fi
 
-    # Only run if the migration command is available
-    # For payload: check if payload is installed
-    # For npm scripts: check if the script exists in package.json
     if [[ "$MIGRATION_CMD" == "./node_modules/.bin/payload --disable-transpile migrate" ]] || [[ "$MIGRATION_CMD" == "payload --disable-transpile migrate" ]]; then
-        # Check if payload is installed
         if [[ ! -x "$SCRIPT_DIR/node_modules/.bin/payload" ]]; then
             return 0
         fi
-        # Check if payload config exists (means backend is set up)
         if [[ ! -f "$SCRIPT_DIR/src/payload.config.ts" ]] && [[ ! -f "$SCRIPT_DIR/payload.config.ts" ]]; then
             return 0
         fi
     elif [[ "$MIGRATION_CMD" == "npm run "* ]]; then
-        # Extract script name from "npm run db:migrate"
         local script_name="${{MIGRATION_CMD#npm run }}"
         if ! node -e "const p=require('./package.json'); if(!p.scripts?.['$script_name']) process.exit(1)" 2>/dev/null; then
             return 0
@@ -449,13 +518,10 @@ run_migrations() {{
 
     echo "Running database migrations..."
 
-    # Check if database is reachable before running migrations
     if command -v docker &> /dev/null && [[ -f "$SCRIPT_DIR/docker-compose.yml" ]]; then
-        # Ensure database container is running
         if ! docker compose -f "$SCRIPT_DIR/docker-compose.yml" ps --status running 2>/dev/null | grep -q postgres; then
             echo "  Starting database container..."
             docker compose -f "$SCRIPT_DIR/docker-compose.yml" up -d postgres 2>/dev/null || true
-            # Wait for health check
             for attempt in $(seq 1 10); do
                 if docker compose -f "$SCRIPT_DIR/docker-compose.yml" ps --status running 2>/dev/null | grep -q postgres; then
                     break
@@ -465,7 +531,6 @@ run_migrations() {{
         fi
     fi
 
-    # Run the migration command
     if output=$(eval "cd \\"$SCRIPT_DIR\\" && $MIGRATION_CMD" 2>&1); then
         if [[ "$is_payload_backend" == true ]] && printf '%s' "$output" | grep -q "__SPECWRIGHT_PAYLOAD_MIGRATIONS__:no-pending"; then
             echo "  Migrations: SKIP (no pending Payload migrations)"
@@ -476,19 +541,61 @@ run_migrations() {{
         fi
     else
         echo "  Migrations: WARN (command failed, may need manual intervention)"
-        # Don't fail the story — the agent may not have created new migrations
     fi
 }}
 
-# -------------------------------------------------------
-# Codex runner
-# -------------------------------------------------------
+run_track_validation() {{
+    local track="$1"
+    local validation_mode="$2"
 
-run_codex() {{
-    local story_id="$1"
-    local story_title="$2"
+    VALIDATION_OK=true
+    VALIDATION_ERRORS=""
+    echo "Running validation..."
+
+    if [[ "$validation_mode" == "partial" ]]; then
+        run_validation_command "test" "$TEST_CMD" "Tests" "warn"
+        run_validation_command "lint" "$LINT_CMD" "Lint" "warn"
+        run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "block"
+        run_validation_command "build" "$BUILD_CMD" "Build" "block"
+        return 0
+    fi
+
+    if [[ "$REQUIRES_REAL_TESTS" == "true" ]] && validation_policy_contains "block_on" "test"; then
+        if [[ -z "$TEST_CMD" ]] || [[ "$TEST_RUNNER" == "none" ]]; then
+            echo "Tests: FAIL"
+            VALIDATION_OK=false
+            append_validation_error "Tests" "No real test runner is configured in .openclaw/commands.json"
+        else
+            run_validation_command "test" "$TEST_CMD" "Tests" "contract"
+        fi
+    else
+        run_validation_command "test" "$TEST_CMD" "Tests" "contract"
+    fi
+
+    run_validation_command "lint" "$LINT_CMD" "Lint" "contract"
+    run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "contract"
+    run_validation_command "build" "$BUILD_CMD" "Build" "contract"
+}}
+
+run_codex_unit() {{
+    local track="$1"
+    local plan_file="$2"
+    local index="$3"
     local prompt_file
     local output_file
+    local unit_id
+    local source_story_id
+    local unit_title
+    local source_story_title
+    local validation_mode
+    local contract_domains
+
+    unit_id=$(jq -r ".stories[$index].id" "$plan_file")
+    source_story_id=$(jq -r ".stories[$index].source_story_id" "$plan_file")
+    unit_title=$(jq -r ".stories[$index].title" "$plan_file")
+    source_story_title=$(jq -r ".stories[$index].source_story_title" "$plan_file")
+    validation_mode=$(jq -r ".stories[$index].validation_mode // \\"full\\"" "$plan_file")
+    contract_domains=$(jq -r ".stories[$index].contract_domains | join(\\", \\")" "$plan_file")
 
     prompt_file="$(mktemp "$SCRIPT_DIR/.ralph-prompt.XXXXXX.md")"
     output_file="$(mktemp "$SCRIPT_DIR/.codex-last-message.XXXXXX.txt")"
@@ -498,53 +605,56 @@ run_codex() {{
     }}
     trap _cleanup RETURN
 
-    # Build prompt file without evaluating story markdown in the shell
     {{
-        printf '# Task: Implement %s — %s\\n\\n' "$story_id" "$story_title"
+        printf '# Task: Implement %s — %s\\n\\n' "$unit_id" "$unit_title"
         cat <<'PROMPT_EOF'
-You are implementing a single story for the project **{project_name}**.
-
-## Story
+You are implementing a single execution slice for the project **{project_name}**.
 
 PROMPT_EOF
-        if [[ -f "$STORIES_DIR/$story_id.md" ]]; then
-            cat "$STORIES_DIR/$story_id.md"
+        printf -- '- Track: `%s`\\n' "$track"
+        printf -- '- Source story: `%s`\\n' "$source_story_id"
+        printf -- '- Shared contract: `.openclaw/api-contract.json`\\n'
+        if [[ -n "$contract_domains" ]]; then
+            printf -- '- Contract domains: `%s`\\n' "$contract_domains"
+        fi
+        printf -- '- Validation mode: `%s`\\n\\n' "$validation_mode"
+        append_prompt_list "$plan_file" "$index" "owned_files" "Owned Files" "- "
+        append_prompt_list "$plan_file" "$index" "prompt_rules" "Track Rules" "- "
+        cat <<'PROMPT_EOF'
+## Source Story
+
+PROMPT_EOF
+        if [[ -f "$STORIES_DIR/$source_story_id.md" ]]; then
+            cat "$STORIES_DIR/$source_story_id.md"
         else
-            printf 'Implement: %s\\n' "$story_title"
+            printf 'Implement: %s\\n' "$source_story_title"
         fi
         printf '\\n\\n'
         cat <<'PROMPT_EOF'
 ## Instructions
 
-- Read .codex/AGENTS.md for project context and scope boundaries
-- Read spec.json for the full project specification
-- Read architecture.md for component structure
-- Make minimal, targeted changes for this story ONLY
-- Do NOT change architecture or scope beyond what this story requires
-- Run tests if available after implementation
-- If this is a bootstrap story, set up the project structure first
+- Read `.codex/AGENTS.md` for project-wide context
+- Read `.openclaw/api-contract.json` before changing any contract-bound behavior
+- Read `spec.json` and `architecture.md` if the slice needs more context
+- Make minimal, targeted changes for this slice only
+- Do not change unrelated tracks or rewrite the architecture
+- Record validation results in your response
 
 ## CRITICAL: Database Migrations
 
-If this story adds, removes, or modifies any collection fields, database models,
-or schema (including adding localization to fields), you MUST:
+If this slice changes schema, collections, models, or database structure:
 
 PROMPT_EOF
-        printf '1. Make the schema change\\n'
-        printf '2. Generate a migration: `%s`\\n' "$MIGRATION_CREATE"
-        printf '3. Run the migration: `%s`\\n' "$MIGRATION_CMD"
-        printf '4. Verify with: `%s`\\n\\n' "$MIGRATION_STATUS"
+        printf '1. Generate a migration: `%s`\\n' "$MIGRATION_CREATE"
+        printf '2. Run the migration: `%s`\\n' "$MIGRATION_CMD"
+        printf '3. Verify with: `%s`\\n\\n' "$MIGRATION_STATUS"
         cat <<'PROMPT_EOF'
-Skipping this will cause runtime errors like "relation does not exist".
-
 ## Validation
 
-After implementation, run available validation commands (test, lint, build).
-If no commands exist yet, note that in your response.
+Run the validation that makes sense for this slice. Partial slices should still keep the repo buildable.
 PROMPT_EOF
     }} > "$prompt_file"
 
-    # Run Codex via installed CLI
     codex exec \\
         --model "$CODEX_MODEL" \\
         --config "model_reasoning_effort=\\"$CODEX_EFFORT\\"" \\
@@ -554,36 +664,38 @@ PROMPT_EOF
         - < "$prompt_file"
 
     local exit_code=$?
-
     if [[ -f "$output_file" ]]; then
         local output_content
         output_content=$(cat "$output_file")
-
-        # Check if output is empty or contains error
         if [[ -z "$output_content" ]] || [[ "$output_content" == *'"type":"error"'* ]]; then
-            echo "Codex returned empty or error output for $story_id"
+            echo "Codex returned empty or error output for $unit_id"
             return 1
         fi
-
         echo "$output_content"
     else
-        echo "No output file generated for $story_id"
+        echo "No output file generated for $unit_id"
         return 1
     fi
 
     return $exit_code
 }}
 
-# -------------------------------------------------------
-# Codex retry runner (includes error context)
-# -------------------------------------------------------
-
-run_codex_retry() {{
-    local story_id="$1"
-    local story_title="$2"
-    local previous_error="$3"
+run_codex_retry_unit() {{
+    local track="$1"
+    local plan_file="$2"
+    local index="$3"
+    local previous_error="$4"
     local prompt_file
     local output_file
+    local unit_id
+    local source_story_id
+    local unit_title
+    local source_story_title
+
+    unit_id=$(jq -r ".stories[$index].id" "$plan_file")
+    source_story_id=$(jq -r ".stories[$index].source_story_id" "$plan_file")
+    unit_title=$(jq -r ".stories[$index].title" "$plan_file")
+    source_story_title=$(jq -r ".stories[$index].source_story_title" "$plan_file")
 
     prompt_file="$(mktemp "$SCRIPT_DIR/.ralph-prompt.XXXXXX.md")"
     output_file="$(mktemp "$SCRIPT_DIR/.codex-last-message.XXXXXX.txt")"
@@ -593,11 +705,10 @@ run_codex_retry() {{
     }}
     trap _cleanup RETURN
 
-    # Build retry prompt without evaluating error text or story markdown in the shell
     {{
-        printf '# RETRY: Fix %s — %s\\n\\n' "$story_id" "$story_title"
+        printf '# RETRY: Fix %s — %s\\n\\n' "$unit_id" "$unit_title"
         cat <<'PROMPT_EOF'
-You are RETRYING a story that failed on the previous attempt for the project **{project_name}**.
+You are RETRYING a slice that failed on the previous attempt for the project **{project_name}**.
 
 ## Previous Error
 
@@ -605,24 +716,25 @@ The previous attempt failed with:
 
 PROMPT_EOF
         printf '```\\n%s\\n```\\n\\n' "$previous_error"
+        append_prompt_list "$plan_file" "$index" "prompt_rules" "Track Rules" "- "
+        cat <<'PROMPT_EOF'
+## Source Story
+
+PROMPT_EOF
+        if [[ -f "$STORIES_DIR/$source_story_id.md" ]]; then
+            cat "$STORIES_DIR/$source_story_id.md"
+        else
+            printf 'Implement: %s\\n' "$source_story_title"
+        fi
+        printf '\\n\\n'
         cat <<'PROMPT_EOF'
 ## What to do
 
 1. Read the error above carefully
-2. Identify what went wrong (build error, missing migration, type error, test failure)
-3. Fix ONLY the issue described — do not rewrite the entire story
-4. Run validation to confirm the fix works
+2. Fix only the issue that blocked the slice
+3. Preserve the shared contract and track ownership boundaries
+4. Re-run validation after the fix
 
-## Story
-
-PROMPT_EOF
-        if [[ -f "$STORIES_DIR/$story_id.md" ]]; then
-            cat "$STORIES_DIR/$story_id.md"
-        else
-            printf 'Implement: %s\\n' "$story_title"
-        fi
-        printf '\\n\\n'
-        cat <<'PROMPT_EOF'
 ## CRITICAL: Database Migrations
 
 If the error is about missing tables or columns ("relation does not exist"):
@@ -632,11 +744,10 @@ PROMPT_EOF
         cat <<'PROMPT_EOF'
 ## Validation
 
-After fixing, run: test, lint, build.
+After fixing, run build/typecheck and any relevant tests.
 PROMPT_EOF
     }} > "$prompt_file"
 
-    # Run Codex via installed CLI
     codex exec \\
         --model "$CODEX_MODEL" \\
         --config "model_reasoning_effort=\\"$CODEX_EFFORT\\"" \\
@@ -646,218 +757,219 @@ PROMPT_EOF
         - < "$prompt_file"
 
     local exit_code=$?
-
     if [[ -f "$output_file" ]]; then
         local output_content
         output_content=$(cat "$output_file")
-
         if [[ -z "$output_content" ]] || [[ "$output_content" == *'"type":"error"'* ]]; then
-            echo "Codex returned empty or error output for $story_id (retry)"
+            echo "Codex returned empty or error output for $unit_id (retry)"
             return 1
         fi
-
         echo "$output_content"
     else
-        echo "No output file generated for $story_id (retry)"
+        echo "No output file generated for $unit_id (retry)"
         return 1
     fi
 
     return $exit_code
 }}
 
-# -------------------------------------------------------
-# Read execution plan
-# -------------------------------------------------------
+run_track_plan() {{
+    local track="$1"
+    local plan_file="$2"
+    local start_token="$3"
+    local total
+    local started=true
+    local failed=0
+    local track_label
+
+    total=$(jq '.total_stories' "$plan_file")
+    track_label=$(jq -r '.label // "Track"' "$plan_file")
+
+    if [[ "$total" -eq 0 ]]; then
+        echo "[$track] No stories in plan."
+        return 0
+    fi
+
+    if [[ -n "$start_token" ]] && track_has_start_token "$plan_file" "$start_token"; then
+        started=false
+    fi
+
+    echo ""
+    echo "=== $track_label Loop ==="
+    echo "Stories: $total"
+    echo "Plan: $plan_file"
+    echo ""
+
+    for i in $(seq 0 $(( total - 1 ))); do
+        local unit_id
+        local source_story_id
+        local unit_title
+        local unit_phase
+        local unit_order
+        local validation_mode
+        local needs_migrations
+
+        unit_id=$(jq -r ".stories[$i].id" "$plan_file")
+        source_story_id=$(jq -r ".stories[$i].source_story_id" "$plan_file")
+        unit_title=$(jq -r ".stories[$i].title" "$plan_file")
+        unit_phase=$(jq -r ".stories[$i].phase" "$plan_file")
+        unit_order=$(jq -r ".stories[$i].order" "$plan_file")
+        validation_mode=$(jq -r ".stories[$i].validation_mode // \\"full\\"" "$plan_file")
+        needs_migrations=$(jq -r ".stories[$i].needs_migrations // false" "$plan_file")
+
+        if [[ "$started" == false ]]; then
+            if [[ "$unit_id" == "$start_token" ]] || [[ "$source_story_id" == "$start_token" ]]; then
+                started=true
+            else
+                continue
+            fi
+        fi
+
+        if track_unit_done "$track" "$unit_id"; then
+            echo "[$track $unit_order/$total] $unit_id — SKIP (already done)"
+            continue
+        fi
+
+        echo "---"
+        echo "[$track $unit_order/$total] $unit_id — $unit_title"
+        echo "Source story: $source_story_id"
+        echo "Phase: $unit_phase"
+        echo ""
+
+        if [[ "$DRY_RUN" == true ]]; then
+            echo "[DRY RUN] Would run codex with:"
+            echo "  Track: $track"
+            echo "  Unit: $unit_id"
+            echo "  Source story: $source_story_id"
+            echo ""
+            continue
+        fi
+
+        append_progress "$track" "$unit_id" "$source_story_id" "START" "$unit_title"
+
+        local slice_done=false
+        local attempt=0
+        local last_error=""
+
+        while [[ "$slice_done" == false ]] && [[ $attempt -le $MAX_RETRIES ]]; do
+            attempt=$((attempt + 1))
+
+            if [[ $attempt -gt 1 ]]; then
+                echo "  Retry $((attempt - 1))/$MAX_RETRIES for $unit_id..."
+                append_progress "$track" "$unit_id" "$source_story_id" "RETRY" "Attempt $attempt: $last_error"
+                sleep 5
+            fi
+
+            local codex_ok=""
+            if [[ $attempt -eq 1 ]]; then
+                if run_codex_unit "$track" "$plan_file" "$i"; then
+                    codex_ok="ok"
+                fi
+            else
+                if run_codex_retry_unit "$track" "$plan_file" "$i" "$last_error"; then
+                    codex_ok="ok"
+                fi
+            fi
+
+            if [[ -z "$codex_ok" ]]; then
+                last_error="Codex execution failed"
+                echo "  Codex failed (attempt $attempt)"
+
+                if [[ $attempt -gt $MAX_RETRIES ]]; then
+                    append_progress "$track" "$unit_id" "$source_story_id" "BLOCKED" "Codex failed after $attempt attempts"
+                    failed=$((failed + 1))
+                    break
+                fi
+                continue
+            fi
+
+            local migration_lock=""
+            migration_lock=$(acquire_lock "migrations")
+            run_migrations "$track" "$needs_migrations"
+            release_lock "$migration_lock"
+
+            local validation_lock=""
+            validation_lock=$(acquire_lock "validation")
+            run_track_validation "$track" "$validation_mode"
+            release_lock "$validation_lock"
+
+            if [[ "$VALIDATION_OK" == true ]]; then
+                if [[ $attempt -gt 1 ]]; then
+                    append_progress "$track" "$unit_id" "$source_story_id" "DONE" "$unit_title (succeeded on attempt $attempt)"
+                else
+                    append_progress "$track" "$unit_id" "$source_story_id" "DONE" "$unit_title"
+                fi
+                echo "[$track $unit_order/$total] $unit_id — DONE"
+                slice_done=true
+            else
+                last_error="$VALIDATION_ERRORS"
+                echo "  Validation failed (attempt $attempt)"
+
+                if [[ $attempt -gt $MAX_RETRIES ]]; then
+                    append_progress "$track" "$unit_id" "$source_story_id" "VALIDATION" "Failed after $attempt attempts: $VALIDATION_ERRORS"
+                    failed=$((failed + 1))
+                fi
+            fi
+        done
+    done
+
+    if [[ $failed -gt 0 ]]; then
+        return 1
+    fi
+
+    return 0
+}}
 
 TOTAL=$(jq '.total_stories' "$PLAN_FILE")
 echo ""
 echo "=== Ralph Loop: {project_name} ==="
 echo "Stories: $TOTAL"
 echo "Project: $SCRIPT_DIR"
+echo "Strategy: $(jq -r '.parallel_execution.strategy // "serial"' "$PLAN_FILE")"
 echo ""
 
-STARTED=false
-if [[ -z "$START_FROM" ]]; then
-    STARTED=true
+FAILURES=0
+
+if [[ "$TRACK" == "shared" ]]; then
+    run_track_plan "shared" "$SHARED_PLAN_FILE" "$START_FROM" || FAILURES=$((FAILURES + 1))
+elif [[ "$TRACK" == "frontend" ]]; then
+    run_track_plan "frontend" "$FRONTEND_PLAN_FILE" "$START_FROM" || FAILURES=$((FAILURES + 1))
+elif [[ "$TRACK" == "backend" ]]; then
+    run_track_plan "backend" "$BACKEND_PLAN_FILE" "$START_FROM" || FAILURES=$((FAILURES + 1))
+elif [[ "$TRACK" == "integration" ]]; then
+    run_track_plan "integration" "$INTEGRATION_PLAN_FILE" "$START_FROM" || FAILURES=$((FAILURES + 1))
+else
+    run_track_plan "shared" "$SHARED_PLAN_FILE" "$START_FROM" || FAILURES=$((FAILURES + 1))
+
+    if [[ $FAILURES -eq 0 ]]; then
+        frontend_failed=0
+        backend_failed=0
+
+        run_track_plan "frontend" "$FRONTEND_PLAN_FILE" "$START_FROM" &
+        FRONTEND_PID=$!
+        run_track_plan "backend" "$BACKEND_PLAN_FILE" "$START_FROM" &
+        BACKEND_PID=$!
+
+        wait "$FRONTEND_PID" || frontend_failed=1
+        wait "$BACKEND_PID" || backend_failed=1
+
+        FAILURES=$((FAILURES + frontend_failed + backend_failed))
+    fi
+
+    if [[ $FAILURES -eq 0 ]]; then
+        run_track_plan "integration" "$INTEGRATION_PLAN_FILE" "$START_FROM" || FAILURES=$((FAILURES + 1))
+    fi
 fi
 
-IMPLEMENTED=0
-FAILED=0
-MAX_RETRIES=2
-
-for i in $(seq 0 $(( TOTAL - 1 ))); do
-    STORY_ID=$(jq -r ".stories[$i].id" "$PLAN_FILE")
-    STORY_TITLE=$(jq -r ".stories[$i].title" "$PLAN_FILE")
-    STORY_PHASE=$(jq -r ".stories[$i].phase" "$PLAN_FILE")
-    STORY_ORDER=$(jq -r ".stories[$i].order" "$PLAN_FILE")
-
-    # Skip until we reach --from story
-    if [[ "$STARTED" == false ]]; then
-        if [[ "$STORY_ID" == "$START_FROM" ]]; then
-            STARTED=true
-        else
-            continue
-        fi
-    fi
-
-    # Check if already done in progress.txt
-    if grep -q "$STORY_ID.*DONE" "$PROGRESS_FILE" 2>/dev/null; then
-        echo "[$STORY_ORDER/$TOTAL] $STORY_ID — SKIP (already done)"
-        continue
-    fi
-
-    echo "---"
-    echo "[$STORY_ORDER/$TOTAL] $STORY_ID — $STORY_TITLE"
-    echo "Phase: $STORY_PHASE"
-    echo ""
-
-    if [[ "$DRY_RUN" == true ]]; then
-        echo "[DRY RUN] Would run codex with:"
-        echo "  Story: $STORY_ID — $STORY_TITLE"
-        echo "  Phase: $STORY_PHASE"
-        echo ""
-        continue
-    fi
-
-    # Record start
-    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    echo "[$TIMESTAMP] $STORY_ID — START — $STORY_TITLE" >> "$PROGRESS_FILE"
-
-    STORY_DONE=false
-    ATTEMPT=0
-    LAST_ERROR=""
-
-    while [[ "$STORY_DONE" == false ]] && [[ $ATTEMPT -le $MAX_RETRIES ]]; do
-        ATTEMPT=$((ATTEMPT + 1))
-
-        if [[ $ATTEMPT -gt 1 ]]; then
-            echo ""
-            echo "  ↻ Retry $((ATTEMPT - 1))/$MAX_RETRIES for $STORY_ID..."
-            TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-            echo "[$TIMESTAMP] $STORY_ID — RETRY — Attempt $ATTEMPT: $LAST_ERROR" >> "$PROGRESS_FILE"
-            sleep 5
-        fi
-
-        # Run Codex
-        if [[ $ATTEMPT -eq 1 ]]; then
-            echo "Running codex for $STORY_ID..."
-        fi
-
-        CODEX_OUTPUT=""
-        if [[ $ATTEMPT -eq 1 ]]; then
-            # First attempt — normal prompt
-            if run_codex "$STORY_ID" "$STORY_TITLE"; then
-                CODEX_OUTPUT="ok"
-            fi
-        else
-            # Retry attempt — include error context in prompt
-            if run_codex_retry "$STORY_ID" "$STORY_TITLE" "$LAST_ERROR"; then
-                CODEX_OUTPUT="ok"
-            fi
-        fi
-
-        if [[ -z "$CODEX_OUTPUT" ]]; then
-            # Codex crashed
-            LAST_ERROR="Codex execution failed"
-            echo "  ✗ Codex failed (attempt $ATTEMPT)"
-
-            if [[ $ATTEMPT -gt $MAX_RETRIES ]]; then
-                TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-                echo "[$TIMESTAMP] $STORY_ID — BLOCKED — Codex failed after $ATTEMPT attempts" >> "$PROGRESS_FILE"
-                FAILED=$((FAILED + 1))
-                echo ""
-                echo "[$STORY_ORDER/$TOTAL] $STORY_ID — BLOCKED (after $ATTEMPT attempts)"
-                echo ""
-                echo "Stopping: codex failed on $STORY_ID after $MAX_RETRIES retries"
-                echo "Fix the issues and run: ./ralph.sh --from $STORY_ID"
-                break 2
-            fi
-            continue
-        fi
-
-        # -------------------------------------------------------
-        # Post-story: Run migrations as safety net
-        # -------------------------------------------------------
-        run_migrations
-
-        # -------------------------------------------------------
-        # Post-story: Run validation
-        # -------------------------------------------------------
-        VALIDATION_OK=true
-        VALIDATION_ERRORS=""
-        echo "Running validation..."
-
-        if [[ "$REQUIRES_REAL_TESTS" == "true" ]] && validation_policy_contains "block_on" "test"; then
-            if [[ -z "$TEST_CMD" ]] || [[ "$TEST_RUNNER" == "none" ]]; then
-                echo "Tests: FAIL"
-                VALIDATION_OK=false
-                append_validation_error "Tests" "No real test runner is configured in .openclaw/commands.json"
-            else
-                run_validation_command "test" "$TEST_CMD" "Tests"
-            fi
-        else
-            run_validation_command "test" "$TEST_CMD" "Tests"
-        fi
-
-        run_validation_command "lint" "$LINT_CMD" "Lint"
-        run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck"
-        run_validation_command "build" "$BUILD_CMD" "Build"
-
-        # Orphan route detection: warn about pages outside [locale]/
-        # that would be intercepted by i18n middleware redirects.
-        if [[ -f "$SCRIPT_DIR/middleware.ts" ]] && grep -q "locale" "$SCRIPT_DIR/middleware.ts" 2>/dev/null; then
-            ORPHANS=""
-            while IFS= read -r route_file; do
-                # Derive URL path: strip src/app prefix, remove route groups (parenthesized dirs)
-                url_path=$(echo "$route_file" | sed 's|^src/app/||' | sed 's|/page[.]tsx$||' | sed 's|([^/]*)/||g')
-                if [[ -n "$url_path" ]]; then
-                    ORPHANS="$ORPHANS  - $route_file -> /$url_path (unreachable — middleware redirects to /[locale]/$url_path)\\n"
-                fi
-            done < <(find "$SCRIPT_DIR/src/app" -name "page.tsx" -not -path "*/\\[locale\\]/*" -not -path "*/api/*" -not -path "*/_*" 2>/dev/null | sed "s|^$SCRIPT_DIR/||" | grep -v "^src/app/page.tsx$")
-            if [[ -n "$ORPHANS" ]]; then
-                echo "Orphan routes: WARN"
-                echo -e "  Possible orphan routes (middleware redirects these):\\n$ORPHANS"
-            fi
-        fi
-
-        if [[ "$VALIDATION_OK" == true ]]; then
-            TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-            if [[ $ATTEMPT -gt 1 ]]; then
-                echo "[$TIMESTAMP] $STORY_ID — DONE — $STORY_TITLE (succeeded on attempt $ATTEMPT)" >> "$PROGRESS_FILE"
-            else
-                echo "[$TIMESTAMP] $STORY_ID — DONE — $STORY_TITLE" >> "$PROGRESS_FILE"
-            fi
-            echo ""
-            echo "[$STORY_ORDER/$TOTAL] $STORY_ID — DONE"
-            IMPLEMENTED=$((IMPLEMENTED + 1))
-            STORY_DONE=true
-        else
-            LAST_ERROR="$VALIDATION_ERRORS"
-            echo "  ✗ Validation failed (attempt $ATTEMPT)"
-
-            if [[ $ATTEMPT -gt $MAX_RETRIES ]]; then
-                TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-                echo "[$TIMESTAMP] $STORY_ID — VALIDATION — Failed after $ATTEMPT attempts: $VALIDATION_ERRORS" >> "$PROGRESS_FILE"
-                FAILED=$((FAILED + 1))
-                echo ""
-                echo "[$STORY_ORDER/$TOTAL] $STORY_ID — VALIDATION FAILED (after $ATTEMPT attempts)"
-                echo ""
-                echo "Stopping: validation failed on $STORY_ID after $MAX_RETRIES retries"
-                echo "Fix the issues and run: ./ralph.sh --from $STORY_ID"
-                break 2
-            fi
-        fi
-    done
-done
-
+IMPLEMENTED=$( (grep -h "DONE" "$TRACK_PROGRESS_DIR"/*.txt 2>/dev/null || true) | wc -l | tr -d ' ' )
 echo ""
 echo "=== Ralph Loop Complete ==="
-echo "Implemented: $IMPLEMENTED"
-echo "Failed: $FAILED"
-echo "Total: $TOTAL"
+echo "Implemented slices: $IMPLEMENTED"
+echo "Failed tracks: $FAILURES"
+echo "Total source stories: $TOTAL"
 echo ""
 
-if [[ $FAILED -gt 0 ]]; then
+if [[ $FAILURES -gt 0 ]]; then
     exit 1
 fi
 '''

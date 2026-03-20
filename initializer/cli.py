@@ -63,6 +63,26 @@ def main():
     validate_parser = subparsers.add_parser("validate")
     validate_parser.add_argument("path", nargs="?", default=".")
 
+    benchmark_parser = subparsers.add_parser("benchmark")
+    benchmark_parser.add_argument("path", help="Path to the baseline generated project directory.")
+    benchmark_parser.add_argument(
+        "--candidate",
+        help="Optional path to the parallel/candidate generated project directory.",
+    )
+    benchmark_parser.add_argument(
+        "--output",
+        help="Optional path to write the Markdown benchmark report.",
+    )
+    benchmark_parser.add_argument(
+        "--json",
+        dest="json_output",
+        help="Optional path to write the JSON benchmark payload.",
+    )
+    benchmark_parser.add_argument(
+        "--snapshot-dir",
+        help="Optional directory where progress, git-status, and summary snapshots will be written.",
+    )
+
     architect_parser = subparsers.add_parser(
         "architect",
         help="Interactively edit project architecture (components, communication, boundaries).",
@@ -127,6 +147,17 @@ def main():
         from initializer.flow.validate_project import run_validate_project
 
         return run_validate_project(args.path)
+
+    elif args.command == "benchmark":
+        from initializer.flow.benchmark_project import run_benchmark_project
+
+        return run_benchmark_project(
+            args.path,
+            candidate=args.candidate,
+            output=args.output,
+            json_output=args.json_output,
+            snapshot_dir=args.snapshot_dir,
+        )
 
     elif args.command == "architect":
         from initializer.flow.architect_flow import run_architect

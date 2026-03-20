@@ -22,6 +22,8 @@ AI execution time manageable.
 
 import math
 
+from initializer.engine.story_engine import derive_execution_metadata
+
 
 def _has_public_site(spec):
     """Check if public-site is in the reconciled capabilities list."""
@@ -398,5 +400,9 @@ def refine_spec(spec):
     spec = refine_prd(spec)
     spec = refine_stories(spec)
     spec = _split_complex_stories(spec)
+
+    for story in spec.get("stories", []):
+        if isinstance(story, dict):
+            story["execution"] = derive_execution_metadata(story)
 
     return spec

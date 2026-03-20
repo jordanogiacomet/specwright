@@ -14,7 +14,9 @@ build/
 .env.*.local
 
 # Generated output
-output/
+output/*
+!output/editorial-control-center/
+!output/editorial-control-center/**
 # Node (root-level lockfile is not part of the Python project)
 package-lock.json
 # OS

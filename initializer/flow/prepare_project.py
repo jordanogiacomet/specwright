@@ -442,6 +442,17 @@ def _print_execution_preview(spec: dict[str, Any], project_dir: Path) -> None:
             title = story.get("title", "?")
             phase = story.get("phase", "?")
             print(f"  {order:>2}. [{phase}] {sid} — {title}")
+
+        parallel = plan.get("parallel_execution", {})
+        if parallel:
+            print("")
+            print("Parallel loops:")
+            print(f"  Strategy: {parallel.get('strategy', 'n/a')}")
+            for track_info in parallel.get("tracks", []):
+                label = track_info.get("label", track_info.get("track", "?"))
+                count = track_info.get("count", 0)
+                plan_file = track_info.get("plan_file", "")
+                print(f"  - {label}: {count} slices ({plan_file})")
     else:
         print("  (no execution plan found)")
 

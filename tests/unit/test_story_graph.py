@@ -178,6 +178,76 @@ def test_load_completed_does_not_return_done_as_story_id(tmp_path):
     assert "DONE" not in completed
 
 
+def test_load_completed_aggregates_parallel_root_progress_to_story_ids(tmp_path):
+    openclaw_dir = tmp_path / ".openclaw"
+    openclaw_dir.mkdir()
+
+    (openclaw_dir / "frontend-plan.json").write_text(
+        json.dumps(
+            {
+                "stories": [
+                    {"id": "FE-ST-012", "source_story_id": "ST-012"},
+                ]
+            }
+        )
+    )
+    (openclaw_dir / "integration-plan.json").write_text(
+        json.dumps(
+            {
+                "stories": [
+                    {"id": "IN-ST-012", "source_story_id": "ST-012"},
+                ]
+            }
+        )
+    )
+
+    path = tmp_path / "progress.txt"
+    path.write_text(
+        """\
+[2026-03-20T12:14:20Z] [frontend] FE-ST-012 (ST-012) — DONE — Frontend slice
+[2026-03-20T12:28:02Z] [integration] IN-ST-012 (ST-012) — DONE — Integration slice
+"""
+    )
+
+    completed = load_completed_from_progress(path)
+    assert completed == {"ST-012"}
+    assert "(ST-012)" not in completed
+
+
+def test_load_completed_does_not_finish_parallel_story_until_all_units_done(tmp_path):
+    openclaw_dir = tmp_path / ".openclaw"
+    openclaw_dir.mkdir()
+
+    (openclaw_dir / "frontend-plan.json").write_text(
+        json.dumps(
+            {
+                "stories": [
+                    {"id": "FE-ST-012", "source_story_id": "ST-012"},
+                ]
+            }
+        )
+    )
+    (openclaw_dir / "integration-plan.json").write_text(
+        json.dumps(
+            {
+                "stories": [
+                    {"id": "IN-ST-012", "source_story_id": "ST-012"},
+                ]
+            }
+        )
+    )
+
+    path = tmp_path / "progress.txt"
+    path.write_text(
+        """\
+[2026-03-20T12:14:20Z] [frontend] FE-ST-012 (ST-012) — DONE — Frontend slice
+"""
+    )
+
+    completed = load_completed_from_progress(path)
+    assert completed == set()
+
+
 # -------------------------------------------------------------------
 # StoryScheduler
 # -------------------------------------------------------------------

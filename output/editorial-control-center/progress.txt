@@ -12,3 +12,23 @@
 #
 # Example:
 # [2026-03-14T12:00:00Z] ST-001 — START — Began implementation of authentication flow
+[2026-03-20T12:18:57Z] ST-003 — START — Initialize project repository (part 1 of 2)
+[2026-03-20T12:19:18Z] ST-003 — RETRY — Attempt 2: Codex execution failed
+[2026-03-20T12:19:44Z] ST-003 — RETRY — Attempt 3: Codex execution failed
+[2026-03-20T12:29:16Z] ST-003 — DONE — Initialize project repository (part 1 of 2) (succeeded on attempt 3)
+[2026-03-20T12:29:16Z] ST-003b — START — Initialize project repository (part 2 of 2)
+[2026-03-20T12:37:11Z] ST-003b — DONE — Initialize project repository (part 2 of 2)
+[2026-03-20T12:37:11Z] ST-004 — START — Setup database
+[2026-03-20T12:57:39Z] ST-004 — DONE — Setup database
+[2026-03-20T12:57:40Z] ST-005 — START — Setup backend service
+[2026-03-20T13:16:16Z] ST-005 — DONE — Setup backend service
+[2026-03-20T13:16:16Z] ST-901 — START — Implement backups
+[2026-03-20T13:17:39Z] ST-901 — RETRY — Attempt 2: Codex execution failed
+[2026-03-20T13:26:34Z] ST-901 — VALIDATION — bash scripts/backup.sh, manual restore test, npm test, npm run lint, npm run build
+[2026-03-20T13:26:34Z] ST-901 — DONE — Implement backups
+[2026-03-20T13:33:00Z] ST-901 — DONE — Implement backups (succeeded on attempt 2)
+[2026-03-20T13:33:00Z] ST-006 — START — Create frontend application
+[2026-03-20T13:43:49Z] ST-006 — DONE — Create frontend application
+[2026-03-20T13:43:49Z] ST-001 — START — Define CMS content model (part 1 of 2)
+[2026-03-20T14:03:25Z] ST-001 — DONE — Define CMS content model (part 1 of 2)
+[2026-03-20T14:03:25Z] ST-900 — START — Setup monitoring and logging

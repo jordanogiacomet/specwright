@@ -243,7 +243,9 @@ def test_prepare_node_pipeline_contract_stays_aligned_with_ralph(tmp_path):
     assert commands["commands"]["typecheck"] == "npm run typecheck"
     assert commands["validation"]["test_runner"] == "vitest"
     assert 'COMMANDS_FILE="$SCRIPT_DIR/.openclaw/commands.json"' in ralph
+    assert 'API_CONTRACT_FILE="$SCRIPT_DIR/.openclaw/api-contract.json"' in ralph
     assert 'TEST_CMD=$(jq -r \'.commands.test // ""\' "$COMMANDS_FILE")' in ralph
-    assert 'run_validation_command "test" "$TEST_CMD" "Tests"' in ralph
+    assert 'run_validation_command "test" "$TEST_CMD" "Tests" "warn"' in ralph
+    assert 'run_track_plan "frontend" "$FRONTEND_PLAN_FILE" "$START_FROM" &' in ralph
     assert "npm test --if-present" not in ralph
     assert "npm run lint --if-present" not in ralph

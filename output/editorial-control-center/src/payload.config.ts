@@ -1,32 +1,45 @@
 import { buildConfig } from "payload";
 import { postgresAdapter } from "@payloadcms/db-postgres";
-import { lexicalEditor } from "@payloadcms/richtext-lexical";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { Users } from "./collections/Users.ts";
+import { Authors } from "./collections/Authors.ts";
+import { Homepage } from "./globals/Homepage.ts";
+import { Media } from "./collections/Media.ts";
+import { Pages } from "./collections/Pages.ts";
+import { Posts } from "./collections/Posts.ts";
+import { SiteSettings } from "./globals/SiteSettings.ts";
+import { databasePoolConfig } from "./lib/db.ts";
+import {
+  payloadLoggerConfig,
+  registerUnhandledErrorHandlers,
+} from "./lib/logger.ts";
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
+registerUnhandledErrorHandlers();
+
+function getPayloadSecret(): string {
+  const secret = process.env.PAYLOAD_SECRET?.trim();
+
+  if (!secret) {
+    throw new Error("PAYLOAD_SECRET env var is required");
+  }
+
+  return secret;
+}
+
 export default buildConfig({
-  admin: {
-    user: Users.slug,
-  },
-  collections: [Users],
-  editor: lexicalEditor(),
-  secret: (() => {
-    const s = process.env.PAYLOAD_SECRET;
-    if (!s) throw new Error("PAYLOAD_SECRET env var is required");
-    return s;
-  })(),
+  collections: [Pages, Posts, Authors, Media],
+  globals: [SiteSettings, Homepage],
+  secret: getPayloadSecret(),
+  logger: payloadLoggerConfig,
   typescript: {
     outputFile: path.resolve(dirname, "payload-types.ts"),
   },
   db: postgresAdapter({
     migrationDir: path.resolve(dirname, "lib/migrations"),
-    pool: {
-      connectionString: process.env.DATABASE_URI || "",
-    },
+    pool: databasePoolConfig,
   }),
 });

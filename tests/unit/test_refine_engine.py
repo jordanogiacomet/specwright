@@ -413,3 +413,46 @@ def test_refine_spec_includes_splitting():
     titles = [s["title"] for s in result["stories"]]
     assert any("part 1 of 2" in t for t in titles)
     assert any("part 2 of 2" in t for t in titles)
+
+
+def test_refine_spec_recomputes_execution_for_security_and_split_stories():
+    public_story = _make_story(
+        ac_count=10,
+        file_count=5,
+        title="Implement public site pages",
+        story_key="product.public-site-rendering",
+        description="Create public-facing pages for published content: pages, posts.",
+        acceptance_criteria=[
+            "Public route `/pages/[slug]` exists and renders published content for the `pages` collection",
+            "Public route `/posts/[slug]` exists and renders published content for the `posts` collection",
+            "Each public route loads content by unique slug from the matching CMS collection instead of hardcoded page data",
+            "Public pages use SSR or ISR for SEO (meta tags, Open Graph)",
+            "Only published content is visible on public routes — draft content returns 404",
+            "Public pages are accessible without authentication",
+            "Published-only filtering is enforced in the data loader/query layer, not just in the UI",
+            "Public layout includes navigation derived from site-settings global (if it exists)",
+            "The public home page (`/`) renders data from the `homepage` global instead of placeholder content",
+            "Post pages render author attribution from the `authors` collection when author data exists",
+        ],
+        expected_files=[
+            "src/app/(public)/pages/[slug]/page.tsx",
+            "src/app/(public)/posts/[slug]/page.tsx",
+            "src/app/(public)/page.tsx",
+            "src/components/PublicLayout.tsx",
+            "src/lib/public-content.ts",
+        ],
+    )
+    spec = _make_spec(
+        features=["authentication"],
+        capabilities=["public-site"],
+        stories=[public_story],
+    )
+
+    result = refine_spec(spec)
+    by_id = {story["id"]: story for story in result["stories"]}
+
+    assert all(story.get("execution") for story in result["stories"])
+    assert by_id["ST-099"]["execution"]["tracks"] == ["frontend", "integration"]
+    assert by_id["ST-099b"]["execution"]["tracks"] == ["frontend", "integration"]
+    assert by_id["ST-902"]["execution"]["tracks"] == ["backend", "integration"]
+    assert by_id["ST-903"]["execution"]["tracks"] == ["frontend", "backend", "integration"]

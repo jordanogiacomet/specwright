@@ -9,6 +9,8 @@ Updated to validate:
 import json
 from pathlib import Path
 
+from initializer.ai.refine_engine import refine_spec
+from initializer.engine.story_engine import generate_stories
 from initializer.renderers.codex_bundle import write_codex_bundle
 from initializer.renderers.openclaw_bundle import write_openclaw_bundle
 
@@ -79,6 +81,55 @@ def _make_spec(**overrides):
     }
     spec.update(overrides)
     return spec
+
+
+def _make_editorial_parallel_spec():
+    return {
+        "prompt": "editorial platform",
+        "archetype": "editorial-cms",
+        "archetype_data": {"id": "editorial-cms"},
+        "stack": {
+            "frontend": "nextjs",
+            "backend": "payload",
+            "database": "postgres",
+        },
+        "features": ["authentication", "draft-publish", "preview"],
+        "capabilities": ["cms", "public-site"],
+        "architecture": {
+            "components": [
+                {"name": "frontend", "technology": "nextjs", "role": "public site"},
+                {"name": "cms", "technology": "payload", "role": "editorial backend"},
+            ],
+            "decisions": [],
+        },
+        "stories": [],
+        "answers": {
+            "project_name": "Editorial Control Center",
+            "project_slug": "editorial-control-center",
+            "summary": "Editorial CMS with public site and auth.",
+            "surface": "public_website",
+            "deploy_target": "docker",
+            "guided_answers": {
+                "content_model": {
+                    "collections": [
+                        {"name": "pages", "purpose": "Landing pages"},
+                        {"name": "posts", "purpose": "Articles"},
+                        {"name": "authors", "purpose": "Author profiles"},
+                    ],
+                    "globals": [
+                        {"name": "homepage", "purpose": "Homepage content"},
+                        {"name": "site-settings", "purpose": "Navigation and SEO defaults"},
+                    ],
+                }
+            },
+        },
+        "discovery": {
+            "decision_signals": {
+                "app_shape": "content-platform",
+                "primary_audience": "external_users",
+            }
+        },
+    }
 
 
 # -------------------------------------------------------
@@ -159,6 +210,11 @@ def test_openclaw_bundle_creates_all_files(tmp_path):
     assert (openclaw_dir / "repo-contract.json").exists()
     assert (openclaw_dir / "commands.json").exists()
     assert (openclaw_dir / "execution-plan.json").exists()
+    assert (openclaw_dir / "api-contract.json").exists()
+    assert (openclaw_dir / "shared-plan.json").exists()
+    assert (openclaw_dir / "frontend-plan.json").exists()
+    assert (openclaw_dir / "backend-plan.json").exists()
+    assert (openclaw_dir / "integration-plan.json").exists()
 
 
 def test_openclaw_bundle_agents_md_is_project_specific(tmp_path):
@@ -257,6 +313,172 @@ def test_openclaw_bundle_execution_plan_cross_phase_deps(tmp_path):
 
     # product.cms-content-model must come before feature.media-library
     assert key_to_order["product.cms-content-model"] < key_to_order["feature.media-library"]
+
+
+def test_openclaw_bundle_parallel_execution_includes_track_plans(tmp_path):
+    spec = _make_spec(
+        stories=[
+            {
+                "id": "ST-001",
+                "story_key": "bootstrap.repository",
+                "title": "Initialize project repository",
+                "description": "Create project structure.",
+                "depends_on": [],
+                "execution": {"tracks": ["shared"], "contract_domains": [], "frontend_files": [], "backend_files": [], "shared_files": ["package.json"], "integration_files": [], "modes": {"shared": "shared-setup"}},
+            },
+            {
+                "id": "ST-002",
+                "story_key": "feature.authentication",
+                "title": "Implement authentication",
+                "description": "Add auth.",
+                "depends_on": ["bootstrap.repository"],
+                "execution": {
+                    "tracks": ["frontend", "backend", "integration"],
+                    "contract_domains": ["auth"],
+                    "frontend_files": ["src/app/(auth)/login/page.tsx"],
+                    "backend_files": ["src/api/auth.ts"],
+                    "shared_files": [],
+                    "integration_files": [],
+                    "modes": {
+                        "frontend": "mock-first",
+                        "backend": "contract-first",
+                        "integration": "wire-real-data",
+                    },
+                },
+                "acceptance_criteria": ["POST /api/auth/login returns 200 on success"],
+            },
+        ],
+    )
+    write_openclaw_bundle(tmp_path, spec)
+
+    plan = json.loads((tmp_path / ".openclaw" / "execution-plan.json").read_text())
+    parallel = plan["parallel_execution"]
+
+    assert parallel["enabled"] is True
+    assert parallel["contract_file"] == ".openclaw/api-contract.json"
+    assert {item["track"] for item in parallel["tracks"]} == {"shared", "frontend", "backend", "integration"}
+
+    frontend_plan = json.loads((tmp_path / ".openclaw" / "frontend-plan.json").read_text())
+    backend_plan = json.loads((tmp_path / ".openclaw" / "backend-plan.json").read_text())
+    integration_plan = json.loads((tmp_path / ".openclaw" / "integration-plan.json").read_text())
+
+    assert frontend_plan["stories"][0]["id"] == "FE-ST-002"
+    assert backend_plan["stories"][0]["id"] == "BE-ST-002"
+    assert integration_plan["stories"][0]["id"] == "IN-ST-002"
+    assert integration_plan["stories"][0]["depends_on"] == ["FE-ST-002", "BE-ST-002", "SH-ST-001"]
+
+
+def test_openclaw_bundle_writes_api_contract_domains_and_endpoints(tmp_path):
+    spec = _make_spec(
+        stories=[
+            {
+                "id": "ST-003",
+                "story_key": "feature.authentication",
+                "title": "Implement authentication",
+                "description": "Add auth.",
+                "depends_on": [],
+                "acceptance_criteria": [
+                    "POST /api/auth/register returns 201 on success, 400 on validation error, 409 on duplicate email",
+                    "POST /api/auth/login returns 200 with session token on success, 401 on invalid credentials",
+                ],
+                "execution": {
+                    "tracks": ["frontend", "backend", "integration"],
+                    "contract_domains": ["auth"],
+                    "frontend_files": ["src/app/(auth)/login/page.tsx"],
+                    "backend_files": ["src/api/auth.ts"],
+                    "shared_files": [],
+                    "integration_files": [],
+                    "modes": {
+                        "frontend": "mock-first",
+                        "backend": "contract-first",
+                        "integration": "wire-real-data",
+                    },
+                },
+            }
+        ],
+    )
+    write_openclaw_bundle(tmp_path, spec)
+
+    contract = json.loads((tmp_path / ".openclaw" / "api-contract.json").read_text())
+    auth_domain = next(domain for domain in contract["domains"] if domain["name"] == "auth")
+
+    assert contract["strategy"] == "contract-first-parallel-loops"
+    assert auth_domain["tracks"] == ["frontend", "backend", "integration"]
+    assert auth_domain["frontend_files"] == ["src/app/(auth)/login/page.tsx"]
+    assert auth_domain["backend_files"] == ["src/api/auth.ts"]
+    assert auth_domain["http_endpoints"][0]["method"] == "POST"
+    assert auth_domain["http_endpoints"][0]["path"] == "/api/auth/register"
+
+
+def test_openclaw_bundle_pipeline_preserves_parallel_classification_for_editorial_spec(tmp_path):
+    spec = _make_editorial_parallel_spec()
+    spec["stories"] = generate_stories(spec)
+    spec = refine_spec(spec)
+
+    write_openclaw_bundle(tmp_path, spec)
+
+    by_key = {story["story_key"]: story for story in spec["stories"]}
+    assert by_key["product.public-site-rendering"]["execution"]["tracks"] == ["frontend", "integration"]
+    assert by_key["product.public-site-rendering-part-2"]["execution"]["tracks"] == ["frontend", "integration"]
+    assert by_key["security.rate-limiting"]["execution"]["tracks"] == ["backend", "integration"]
+    assert by_key["security.password-policy"]["execution"]["tracks"] == ["frontend", "backend", "integration"]
+
+    frontend_plan = json.loads((tmp_path / ".openclaw" / "frontend-plan.json").read_text())
+    backend_plan = json.loads((tmp_path / ".openclaw" / "backend-plan.json").read_text())
+    integration_plan = json.loads((tmp_path / ".openclaw" / "integration-plan.json").read_text())
+
+    frontend_keys = {story["source_story_key"] for story in frontend_plan["stories"]}
+    backend_keys = {story["source_story_key"] for story in backend_plan["stories"]}
+    integration_keys = {story["source_story_key"] for story in integration_plan["stories"]}
+
+    assert "product.public-site-rendering" in frontend_keys
+    assert "product.public-site-rendering-part-2" in frontend_keys
+    assert "product.public-site-rendering" not in backend_keys
+    assert "product.public-site-rendering-part-2" not in backend_keys
+    assert "product.public-site-rendering" in integration_keys
+    assert "product.public-site-rendering-part-2" in integration_keys
+
+    assert "security.rate-limiting" in backend_keys
+    assert "security.rate-limiting" not in frontend_keys
+    assert "security.rate-limiting" in integration_keys
+
+    assert "security.password-policy" in frontend_keys
+    assert "security.password-policy" in backend_keys
+    assert "security.password-policy" in integration_keys
+
+
+def test_openclaw_bundle_uses_story_engine_fallback_when_execution_is_missing(tmp_path):
+    spec = _make_spec(
+        stories=[
+            {
+                "id": "ST-903",
+                "story_key": "security.password-policy",
+                "title": "Enforce password policy",
+                "description": "Enforce minimum password length of 8 characters on both client and server.",
+                "depends_on": ["feature.authentication"],
+                "acceptance_criteria": [
+                    "Registration endpoint rejects passwords shorter than 8 characters with a 400 response and descriptive error message",
+                    "Login form validates minimum password length of 8 characters on the client before submission",
+                    "Password validation logic is centralized in a shared utility importable by both client and server",
+                ],
+                "expected_files": ["src/lib/validation.ts"],
+            }
+        ],
+    )
+
+    write_openclaw_bundle(tmp_path, spec)
+
+    frontend_plan = json.loads((tmp_path / ".openclaw" / "frontend-plan.json").read_text())
+    backend_plan = json.loads((tmp_path / ".openclaw" / "backend-plan.json").read_text())
+    integration_plan = json.loads((tmp_path / ".openclaw" / "integration-plan.json").read_text())
+
+    frontend_keys = {story["source_story_key"] for story in frontend_plan["stories"]}
+    backend_keys = {story["source_story_key"] for story in backend_plan["stories"]}
+    integration_keys = {story["source_story_key"] for story in integration_plan["stories"]}
+
+    assert "security.password-policy" in frontend_keys
+    assert "security.password-policy" in backend_keys
+    assert "security.password-policy" in integration_keys
 
 
 def test_openclaw_bundle_execution_plan_all_stories_pending(tmp_path):
@@ -440,8 +662,11 @@ def test_openclaw_repo_contract_has_expected_paths(tmp_path):
     assert contract["contract"]["kind"] == "generated-project"
     assert contract["contract"]["primary_spec"] == "spec.json"
     assert contract["contract"]["stories_dir"] == "docs/stories"
+    assert contract["contract"]["api_contract"] == ".openclaw/api-contract.json"
+    assert contract["contract"]["parallel_plans"]["frontend"] == ".openclaw/frontend-plan.json"
     assert contract["execution_expectations"]["story_driven"] is True
     assert contract["execution_expectations"]["follow_phase_order"] is True
+    assert contract["execution_expectations"]["respect_shared_contract"] is True
 
 
 # -------------------------------------------------------
@@ -458,7 +683,9 @@ def test_openclaw_manifest_has_source_of_truth_list(tmp_path):
     assert "spec.json" in manifest["source_of_truth"]
     assert "PRD.md" in manifest["source_of_truth"]
     assert ".openclaw/execution-plan.json" in manifest["source_of_truth"]
-    assert manifest["execution_mode"] == "story-by-story"
+    assert ".openclaw/api-contract.json" in manifest["source_of_truth"]
+    assert ".openclaw/frontend-plan.json" in manifest["source_of_truth"]
+    assert manifest["execution_mode"] == "parallel-contract-loops"
 
 
 def test_openclaw_manifest_policies_all_true(tmp_path):
@@ -561,7 +788,7 @@ def test_codex_ralph_sh_exits_nonzero_on_failure(tmp_path):
 
     content = (tmp_path / "ralph.sh").read_text()
     assert "exit 1" in content
-    assert "FAILED" in content
+    assert "FAILURES=0" in content
 
 
 def test_codex_ralph_sh_uses_separate_migration_commands(tmp_path):
@@ -589,9 +816,9 @@ def test_codex_ralph_sh_writes_story_prompt_without_shell_eval(tmp_path):
     content = (tmp_path / "ralph.sh").read_text()
     assert 'cat > "$prompt_file" <<PROMPT_EOF' not in content
     assert '$(if [[ -f "$STORIES_DIR/$story_id.md"' not in content
-    assert "printf '# Task: Implement %s — %s\\n\\n' \"$story_id\" \"$story_title\"" in content
+    assert "printf '# Task: Implement %s — %s\\n\\n' \"$unit_id\" \"$unit_title\"" in content
     assert "cat <<'PROMPT_EOF'" in content
-    assert 'cat "$STORIES_DIR/$story_id.md"' in content
+    assert 'cat "$STORIES_DIR/$source_story_id.md"' in content
 
 
 def test_codex_ralph_sh_writes_retry_error_without_shell_eval(tmp_path):
@@ -614,9 +841,43 @@ def test_codex_ralph_sh_reads_validation_contract_from_commands_json(tmp_path):
     assert 'TEST_RUNNER=$(jq -r \'.validation.test_runner // "none"\' "$COMMANDS_FILE")' in content
     assert 'REQUIRES_REAL_TESTS=$(jq -r \'.validation.requires_real_tests // false\' "$COMMANDS_FILE")' in content
     assert 'validation_policy_contains() {' in content
-    assert 'run_validation_command "test" "$TEST_CMD" "Tests"' in content
+    assert 'run_validation_command "test" "$TEST_CMD" "Tests" "warn"' in content
+    assert 'run_validation_command "test" "$TEST_CMD" "Tests" "contract"' in content
     assert "npm test --if-present" not in content
     assert "npm run lint --if-present" not in content
+
+
+def test_codex_ralph_sh_orchestrates_parallel_tracks(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert 'SHARED_PLAN_FILE="$SCRIPT_DIR/.openclaw/shared-plan.json"' in content
+    assert 'FRONTEND_PLAN_FILE="$SCRIPT_DIR/.openclaw/frontend-plan.json"' in content
+    assert 'BACKEND_PLAN_FILE="$SCRIPT_DIR/.openclaw/backend-plan.json"' in content
+    assert 'INTEGRATION_PLAN_FILE="$SCRIPT_DIR/.openclaw/integration-plan.json"' in content
+    assert 'TRACK="all"' in content
+    assert 'run_track_plan "frontend" "$FRONTEND_PLAN_FILE" "$START_FROM" &' in content
+    assert 'run_track_plan "backend" "$BACKEND_PLAN_FILE" "$START_FROM" &' in content
+    assert 'run_track_plan "integration" "$INTEGRATION_PLAN_FILE" "$START_FROM"' in content
+    assert 'API_CONTRACT_FILE="$SCRIPT_DIR/.openclaw/api-contract.json"' in content
+
+
+def test_codex_ralph_sh_only_requires_npx_outside_dry_run(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert content.count("if ! command -v npx &> /dev/null; then") == 1
+    assert content.index('if [[ "$DRY_RUN" == false ]]; then') < content.index("if ! command -v npx &> /dev/null; then")
+
+
+def test_codex_ralph_sh_quotes_contract_domain_join_for_jq(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert r'contract_domains=$(jq -r ".stories[$index].contract_domains | join(\", \")" "$plan_file")' in content
 
 
 def test_codex_ralph_sh_handles_payload_migration_sentinels(tmp_path):

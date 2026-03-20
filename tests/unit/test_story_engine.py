@@ -4,7 +4,7 @@ Updated to validate enriched story fields:
 acceptance_criteria, scope_boundaries, expected_files, depends_on, validation.
 """
 
-from initializer.engine.story_engine import generate_stories
+from initializer.engine.story_engine import derive_execution_metadata, generate_stories
 
 
 def test_generate_stories_creates_canonical_editorial_stories():
@@ -127,6 +127,76 @@ def test_every_story_has_acceptance_criteria():
         ac = story.get("acceptance_criteria", [])
         assert isinstance(ac, list), f"{story['id']} missing acceptance_criteria"
         assert len(ac) > 0, f"{story['id']} has empty acceptance_criteria"
+
+
+def test_stories_include_parallel_execution_metadata():
+    spec = {
+        "stack": {
+            "frontend": "nextjs",
+            "backend": "node-api",
+            "database": "postgres",
+        },
+        "features": ["authentication"],
+        "stories": [],
+    }
+
+    stories = generate_stories(spec)
+    by_key = {story.get("story_key"): story for story in stories}
+
+    repository = by_key["bootstrap.repository"]["execution"]
+    frontend = by_key["bootstrap.frontend"]["execution"]
+    auth = by_key["feature.authentication"]["execution"]
+
+    assert repository["tracks"] == ["shared"]
+    assert frontend["tracks"] == ["frontend"]
+    assert auth["tracks"] == ["frontend", "backend", "integration"]
+    assert "auth" in auth["contract_domains"]
+    assert frontend["modes"]["frontend"] == "real-ui"
+    assert auth["modes"]["frontend"] == "mock-first"
+    assert auth["modes"]["integration"] == "wire-real-data"
+
+
+def test_rate_limiting_execution_tracks_include_backend_and_integration():
+    execution = derive_execution_metadata(
+        {
+            "id": "ST-902",
+            "story_key": "security.rate-limiting",
+            "title": "Add rate limiting to auth endpoints",
+            "description": "Protect authentication endpoints against brute-force attacks with configurable rate limiting.",
+            "acceptance_criteria": [
+                "Auth endpoints return 429 Too Many Requests after exceeding the request threshold",
+                "Responses include rate limit headers: X-RateLimit-Limit, X-RateLimit-Remaining, and Retry-After",
+                "Rate limiting applies to Payload endpoints /api/users/login and /api/users/create",
+                "Rate limiting is implemented as Next.js middleware or API route wrapper",
+            ],
+            "expected_files": ["src/lib/rate-limit.ts", "src/middleware.ts"],
+        }
+    )
+
+    assert execution["tracks"] == ["backend", "integration"]
+    assert execution["backend_files"] == ["src/lib/rate-limit.ts"]
+    assert execution["integration_files"] == ["src/middleware.ts"]
+
+
+def test_password_policy_execution_tracks_cover_client_and_server():
+    execution = derive_execution_metadata(
+        {
+            "id": "ST-903",
+            "story_key": "security.password-policy",
+            "title": "Enforce password policy",
+            "description": "Enforce minimum password length of 8 characters on both client and server.",
+            "acceptance_criteria": [
+                "Registration endpoint rejects passwords shorter than 8 characters with a 400 response and descriptive error message",
+                "Login form validates minimum password length of 8 characters on the client before submission",
+                "Password validation logic is centralized in a shared utility importable by both client and server",
+            ],
+            "expected_files": ["src/lib/validation.ts"],
+        }
+    )
+
+    assert execution["tracks"] == ["frontend", "backend", "integration"]
+    assert execution["contract_domains"] == ["auth"]
+    assert execution["integration_files"] == ["src/lib/validation.ts"]
 
 
 def test_every_story_has_scope_boundaries():

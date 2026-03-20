@@ -17,9 +17,11 @@ The bundle includes:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
+from initializer.engine.story_engine import derive_execution_metadata
 from initializer.engine.validation_contract import build_validation_bundle, migration_commands
 
 
@@ -45,6 +47,384 @@ _PHASE_PRIORITY = {
     "automation": 4,
     "operations": 5,
 }
+
+_TRACK_ORDER = ("shared", "frontend", "backend", "integration")
+_TRACK_LABELS = {
+    "shared": "Shared setup",
+    "frontend": "Frontend",
+    "backend": "Backend",
+    "integration": "Integration",
+}
+_HTTP_CONTRACT_RE = re.compile(
+    r"\b(GET|POST|PUT|PATCH|DELETE)\s+(/[A-Za-z0-9_./:[\]-]+)"
+)
+
+
+def _ordered_entries(
+    entries: dict[str, dict[str, Any]],
+    dependency_key: str,
+    tie_breaker,
+) -> list[dict[str, Any]]:
+    completed: set[str] = set()
+    ordered: list[dict[str, Any]] = []
+    remaining = set(entries.keys())
+
+    while remaining:
+        available = [
+            entry_id
+            for entry_id in remaining
+            if all(dep in completed for dep in entries[entry_id].get(dependency_key, []))
+        ]
+
+        if not available:
+            available = sorted(remaining, key=tie_breaker)
+
+        available.sort(key=tie_breaker)
+
+        for entry_id in available:
+            remaining.discard(entry_id)
+            completed.add(entry_id)
+            ordered.append(entries[entry_id])
+
+    return ordered
+
+
+def _track_unit_id(track: str, source_story_id: str) -> str:
+    prefixes = {
+        "shared": "SH",
+        "frontend": "FE",
+        "backend": "BE",
+        "integration": "IN",
+    }
+    return f"{prefixes[track]}-{source_story_id}"
+
+
+def _story_execution(story: dict[str, Any]) -> dict[str, Any]:
+    execution = story.get("execution", {})
+    derived = derive_execution_metadata(story)
+    if not isinstance(execution, dict) or not execution.get("tracks"):
+        return derived
+
+    merged = dict(execution)
+    for field in (
+        "tracks",
+        "primary_track",
+        "parallelizable",
+        "contract_domains",
+        "frontend_files",
+        "backend_files",
+        "shared_files",
+        "integration_files",
+        "modes",
+    ):
+        if field not in merged:
+            merged[field] = derived.get(field)
+
+    return merged
+
+
+def _story_prompt_rules(track: str, story: dict[str, Any], execution: dict[str, Any]) -> list[str]:
+    domains = execution.get("contract_domains", [])
+    domain_text = ", ".join(domains) if domains else "the shared contract"
+
+    if track == "shared":
+        return [
+            "Implement only the shared setup and repo-level scaffolding needed by both loops.",
+            "Do not add business logic, API wiring, or production UI beyond the source story.",
+            "Keep the workspace ready for frontend and backend loops to proceed independently.",
+        ]
+
+    if track == "frontend":
+        return [
+            "Implement only the frontend-facing slice of the source story.",
+            f"Respect `.openclaw/api-contract.json` for {domain_text} and use mocks/stubs that match the contract.",
+            "Do not wire real API calls yet unless the owned files explicitly require a frontend route handler.",
+            "Do not modify backend-only files outside the owned file list for this slice.",
+        ]
+
+    if track == "backend":
+        return [
+            "Implement only the backend-facing slice of the source story.",
+            f"Make endpoints, schema, and response shapes satisfy `.openclaw/api-contract.json` for {domain_text}.",
+            "Do not add or change frontend pages/components outside the owned file list for this slice.",
+            "Prefer returning stable DTOs/contracts over coupling directly to frontend internals.",
+        ]
+
+    return [
+        "Replace frontend mocks/stubs with real backend wiring for this story.",
+        "Use `.openclaw/api-contract.json` as the non-negotiable interface boundary.",
+        "Touch both frontend and backend only where needed to complete the real end-to-end flow.",
+        "Remove or retire temporary mock adapters when the real integration path is in place.",
+    ]
+
+
+def _extract_http_endpoints(story: dict[str, Any]) -> list[dict[str, Any]]:
+    endpoints: list[dict[str, Any]] = []
+
+    for criterion in story.get("acceptance_criteria", []):
+        if not isinstance(criterion, str):
+            continue
+
+        match = _HTTP_CONTRACT_RE.search(criterion)
+        if not match:
+            continue
+
+        method, path = match.groups()
+        statuses = [
+            int(status)
+            for status in re.findall(r"\b([1-5]\d\d)\b", criterion)
+        ]
+        entry = {
+            "method": method,
+            "path": path,
+            "statuses": statuses or None,
+            "source": criterion,
+        }
+        if entry not in endpoints:
+            endpoints.append(entry)
+
+    return endpoints
+
+
+def _build_api_contract(spec: dict[str, Any]) -> dict[str, Any]:
+    architecture = spec.get("architecture", {})
+    communication = architecture.get("communication", [])
+    boundaries = architecture.get("boundaries", {})
+    domains: dict[str, dict[str, Any]] = {}
+
+    for story in spec.get("stories", []):
+        if not isinstance(story, dict):
+            continue
+
+        execution = _story_execution(story)
+        contract_domains = execution.get("contract_domains", [])
+        if not contract_domains:
+            continue
+
+        endpoints = _extract_http_endpoints(story)
+        for domain in contract_domains:
+            entry = domains.setdefault(
+                domain,
+                {
+                    "name": domain,
+                    "stories": [],
+                    "tracks": [],
+                    "frontend_files": [],
+                    "backend_files": [],
+                    "shared_files": [],
+                    "http_endpoints": [],
+                },
+            )
+
+            story_ref = {
+                "id": story.get("id", ""),
+                "story_key": story.get("story_key", ""),
+                "title": story.get("title", ""),
+            }
+            if story_ref not in entry["stories"]:
+                entry["stories"].append(story_ref)
+
+            for field in ("tracks", "frontend_files", "backend_files", "shared_files"):
+                for item in execution.get(field, []):
+                    if item not in entry[field]:
+                        entry[field].append(item)
+
+            for endpoint in endpoints:
+                if endpoint not in entry["http_endpoints"]:
+                    entry["http_endpoints"].append(endpoint)
+
+    return {
+        "version": 1,
+        "kind": "specwright-api-contract",
+        "strategy": "contract-first-parallel-loops",
+        "source_of_truth": [
+            "spec.json",
+            "architecture.md",
+            "docs/stories",
+            ".openclaw/execution-plan.json",
+        ],
+        "tracks": {
+            "frontend": {
+                "mode": "mock-first",
+                "rules": [
+                    "Implement UI/components against contract-compatible mocks before real API wiring exists.",
+                    "Do not change response shapes locally; update the contract source instead.",
+                ],
+            },
+            "backend": {
+                "mode": "contract-first",
+                "rules": [
+                    "Implement endpoints and persistence so the runtime behavior matches the contract exactly.",
+                    "Prefer additive backend changes over leaking implementation details into the contract.",
+                ],
+            },
+            "integration": {
+                "mode": "wire-real-data",
+                "rules": [
+                    "Replace mocks/stubs with real API wiring only after frontend and backend slices are complete.",
+                    "Use integration stories to reconcile auth flow, loading states, and real data rendering.",
+                ],
+            },
+        },
+        "communication": communication,
+        "boundaries": boundaries,
+        "domains": list(domains.values()),
+    }
+
+
+def _build_parallel_execution(
+    spec: dict[str, Any],
+    ordered_stories: list[dict[str, Any]],
+) -> dict[str, Any]:
+    story_by_id = {
+        story.get("id", ""): story
+        for story in spec.get("stories", [])
+        if isinstance(story, dict) and story.get("id")
+    }
+    story_key_to_id = {
+        story.get("story_key", ""): story.get("id", "")
+        for story in spec.get("stories", [])
+        if isinstance(story, dict) and story.get("story_key") and story.get("id")
+    }
+    order_map = {story["id"]: story["order"] for story in ordered_stories}
+    unit_entries: dict[str, dict[str, dict[str, Any]]] = {track: {} for track in _TRACK_ORDER}
+    unit_ids_by_story: dict[str, dict[str, str]] = {}
+
+    for ordered_story in ordered_stories:
+        source_story = story_by_id.get(ordered_story["id"], ordered_story)
+        execution = _story_execution(source_story)
+        tracks = execution.get("tracks", ["shared"])
+
+        unit_ids_by_story[source_story["id"]] = {}
+
+        for track in tracks:
+            unit_id = _track_unit_id(track, source_story["id"])
+            unit_ids_by_story[source_story["id"]][track] = unit_id
+            owned_files = execution.get(f"{track}_files", [])
+            if track == "integration":
+                owned_files = [
+                    *execution.get("integration_files", []),
+                    *execution.get("frontend_files", []),
+                    *execution.get("backend_files", []),
+                ]
+
+            deduped_owned_files = []
+            for path in owned_files:
+                if path not in deduped_owned_files:
+                    deduped_owned_files.append(path)
+
+            unit_entries[track][unit_id] = {
+                "id": unit_id,
+                "track": track,
+                "label": _TRACK_LABELS[track],
+                "source_story_id": source_story["id"],
+                "source_story_key": source_story.get("story_key", ""),
+                "source_story_title": source_story.get("title", ""),
+                "title": source_story.get("title", "") if track == "shared" else f"{_TRACK_LABELS[track]} slice — {source_story.get('title', '')}",
+                "phase": ordered_story.get("phase", "features"),
+                "status": "pending",
+                "mode": execution.get("modes", {}).get(track, "real-service"),
+                "source_order": order_map.get(source_story["id"], 999),
+                "source_depends_on": source_story.get("depends_on", []),
+                "contract_domains": execution.get("contract_domains", []),
+                "owned_files": deduped_owned_files,
+                "prompt_rules": _story_prompt_rules(track, source_story, execution),
+                "validation_mode": "partial" if track in {"frontend", "backend"} and "integration" in tracks else "full",
+                "needs_migrations": track in {"shared", "backend", "integration"} and any(
+                    isinstance(item, str) and "migration" in item.lower()
+                    for item in source_story.get("acceptance_criteria", [])
+                ),
+            }
+
+    for ordered_story in ordered_stories:
+        source_story = story_by_id.get(ordered_story["id"], ordered_story)
+        source_id = source_story["id"]
+        dependency_keys = source_story.get("depends_on", [])
+        current_units = unit_ids_by_story.get(source_id, {})
+
+        for track, unit_id in current_units.items():
+            dependencies: list[str] = []
+
+            if track == "integration":
+                for local_track in ("shared", "frontend", "backend"):
+                    dep_id = current_units.get(local_track)
+                    if dep_id:
+                        dependencies.append(dep_id)
+
+            for dep_key in dependency_keys:
+                dep_story_id = story_key_to_id.get(dep_key)
+                if not dep_story_id:
+                    continue
+
+                dep_units = unit_ids_by_story.get(dep_story_id, {})
+                if track == "shared":
+                    if dep_units.get("shared"):
+                        dependencies.append(dep_units["shared"])
+                elif track == "frontend":
+                    for candidate in ("shared", "frontend"):
+                        dep_id = dep_units.get(candidate)
+                        if dep_id:
+                            dependencies.append(dep_id)
+                elif track == "backend":
+                    for candidate in ("shared", "backend"):
+                        dep_id = dep_units.get(candidate)
+                        if dep_id:
+                            dependencies.append(dep_id)
+                else:
+                    if dep_units.get("integration"):
+                        dependencies.append(dep_units["integration"])
+                    else:
+                        for candidate in ("shared", "frontend", "backend"):
+                            dep_id = dep_units.get(candidate)
+                            if dep_id:
+                                dependencies.append(dep_id)
+
+            deduped = []
+            for dep in dependencies:
+                if dep not in deduped:
+                    deduped.append(dep)
+            unit_entries[track][unit_id]["depends_on"] = deduped
+
+    plans = {}
+    summaries = []
+
+    for track in _TRACK_ORDER:
+        entries = unit_entries[track]
+        ordered_units = _ordered_entries(
+            entries,
+            "depends_on",
+            lambda unit_id: (
+                entries[unit_id].get("source_order", 999),
+                unit_id,
+            ),
+        )
+        for index, unit in enumerate(ordered_units, start=1):
+            unit["order"] = index
+
+        plan = {
+            "track": track,
+            "label": _TRACK_LABELS[track],
+            "contract_file": ".openclaw/api-contract.json",
+            "total_stories": len(ordered_units),
+            "stories": ordered_units,
+        }
+        plans[track] = plan
+        summaries.append(
+            {
+                "track": track,
+                "label": _TRACK_LABELS[track],
+                "count": len(ordered_units),
+                "plan_file": f".openclaw/{track}-plan.json",
+            }
+        )
+
+    return {
+        "enabled": True,
+        "strategy": "shared-setup -> frontend/backend in parallel -> integration",
+        "contract_file": ".openclaw/api-contract.json",
+        "tracks": summaries,
+        "plans": plans,
+    }
 
 
 def _classify_phase(story_id: str, story_key: str, title: str) -> str:
@@ -133,54 +513,35 @@ def _build_execution_plan(spec: dict[str, Any]) -> dict[str, Any]:
     # ------------------------------------------------------------------
     # Topological sort — dependencies drive order, phases break ties
     # ------------------------------------------------------------------
-    completed: set[str] = set()
-    ordered: list[dict[str, Any]] = []
-
-    # Build a reverse map: for each story, which story_keys does it need?
-    def _deps_satisfied(entry: dict[str, Any]) -> bool:
-        deps = entry.get("depends_on", [])
-        for dep_key in deps:
+    serial_entries: dict[str, dict[str, Any]] = {}
+    for story_id, entry in entries.items():
+        dependency_ids = []
+        for dep_key in entry.get("depends_on", []):
             dep_id = key_to_id.get(dep_key)
-            if dep_id and dep_id not in completed:
-                return False
-        return True
+            if dep_id:
+                dependency_ids.append(dep_id)
 
-    remaining = set(entries.keys())
+        serial_entry = dict(entry)
+        serial_entry["_dependency_ids"] = dependency_ids
+        serial_entries[story_id] = serial_entry
 
-    while remaining:
-        available = [
-            sid for sid in remaining if _deps_satisfied(entries[sid])
-        ]
-
-        if not available:
-            # Remaining stories have unresolvable deps — append them
-            # in phase order so the loop can still attempt them.
-            available = sorted(
-                remaining,
-                key=lambda sid: (
-                    _PHASE_PRIORITY.get(entries[sid]["phase"], 99),
-                    sid,
-                ),
-            )
-
-        # Sort available batch by phase priority then story ID
-        available.sort(
-            key=lambda sid: (
-                _PHASE_PRIORITY.get(entries[sid]["phase"], 99),
-                sid,
-            ),
-        )
-
-        for sid in available:
-            remaining.discard(sid)
-            completed.add(sid)
-            ordered.append(entries[sid])
+    ordered = _ordered_entries(
+        serial_entries,
+        "_dependency_ids",
+        lambda sid: (
+            _PHASE_PRIORITY.get(serial_entries[sid]["phase"], 99),
+            sid,
+        ),
+    )
 
     # Assign sequential order numbers
     phase_counts: dict[str, int] = {}
     for idx, entry in enumerate(ordered, start=1):
+        entry.pop("_dependency_ids", None)
         entry["order"] = idx
         phase_counts[entry["phase"]] = phase_counts.get(entry["phase"], 0) + 1
+
+    parallel_execution = _build_parallel_execution(spec, ordered)
 
     return {
         "total_stories": len(ordered),
@@ -194,6 +555,7 @@ def _build_execution_plan(spec: dict[str, Any]) -> dict[str, Any]:
             {"phase": "operations", "description": "Monitoring, backups, operational setup", "count": phase_counts.get("operations", 0)},
         ],
         "stories": ordered,
+        "parallel_execution": parallel_execution,
     }
 
 
@@ -441,14 +803,19 @@ Before changing code, read these files in this order:
 2. `PRD.md` — enriched product requirements
 3. `decisions.md` — stable architectural decisions
 4. `progress.txt` — append-only execution log
-5. `.openclaw/execution-plan.json` — ordered story list with phases
-6. `docs/stories/` — individual story files
-7. project source files
+5. `.openclaw/api-contract.json` — shared frontend/backend contract for parallel execution
+6. `.openclaw/execution-plan.json` — ordered story list with phases plus parallel track metadata
+7. `.openclaw/{{shared,frontend,backend,integration}}-plan.json` — track-specific plans
+8. `docs/stories/` — individual story files
+9. project source files
 
 ## Execution rules
 
 - Work **one story at a time**, following the order in `execution-plan.json`
 - Start with the **bootstrap phase** — these set up the project structure
+- In parallel mode, run `shared` first, then `frontend` and `backend`, then `integration`
+- Frontend slices must respect `.openclaw/api-contract.json` and use contract-compatible mocks until integration
+- Backend slices must satisfy the same contract before integration starts
 - Do not skip ahead to domain stories before features are in place
 - Do not silently change architecture or product scope
 - Prefer minimal, targeted patches over large rewrites
@@ -469,6 +836,7 @@ Before changing code, read these files in this order:
 - `decisions.md` contains stable decisions unless explicitly superseded
 - `progress.txt` is append-only
 - Stories under `docs/stories/` define execution slices
+- `.openclaw/api-contract.json` is the shared interface contract between frontend and backend loops
 - Implementation must follow the generated architecture
 
 ## Validation
@@ -490,6 +858,7 @@ A story is complete when:
 - Validation was attempted
 - Results were recorded in `progress.txt`
 - The story requirements are satisfied
+- Contract changes were reflected in `.openclaw/api-contract.json` when relevant
 """
 
 
@@ -517,17 +886,20 @@ All planning is done — the agent's job is to implement.
 - `PRD.md` — enriched product requirements with intelligence
 - `decisions.md` — architectural decisions
 - `progress.txt` — execution log
+- `.openclaw/api-contract.json` — frontend/backend contract for parallel slices
 - `.openclaw/execution-plan.json` — ordered implementation plan
+- `.openclaw/shared-plan.json` / `.openclaw/frontend-plan.json` / `.openclaw/backend-plan.json` / `.openclaw/integration-plan.json` — loop-specific plans
 - `docs/stories/` — individual story definitions
 
 ## Execution model
 
-1. Read `execution-plan.json` to find the next pending story
-2. Read the story file in `docs/stories/`
-3. Implement the story
-4. Validate the work
-5. Update `progress.txt`
-6. Move to next story
+1. Run the shared setup plan first
+2. Run frontend and backend track plans in parallel against `.openclaw/api-contract.json`
+3. Run the integration plan after both parallel tracks finish
+4. Read the source story file in `docs/stories/`
+5. Implement the slice
+6. Validate the work
+7. Update `progress.txt`
 
 ## Constraints
 
@@ -536,6 +908,7 @@ All planning is done — the agent's job is to implement.
 - Do not skip validation when commands are available
 - Do not mark work as complete without recording outcomes
 - Follow the phase order: bootstrap → features → product → domain → automation → operations
+- Treat `.openclaw/api-contract.json` as the handshake between frontend and backend slices
 """
 
 
@@ -566,6 +939,21 @@ def write_openclaw_bundle(output_dir: Path, spec: dict[str, Any]) -> None:
         encoding="utf-8",
     )
 
+    # --- api-contract.json ---
+    api_contract = _build_api_contract(spec)
+    (openclaw_dir / "api-contract.json").write_text(
+        json.dumps(api_contract, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    # --- track plans ---
+    parallel_execution = execution_plan.get("parallel_execution", {})
+    for track, plan in parallel_execution.get("plans", {}).items():
+        (openclaw_dir / f"{track}-plan.json").write_text(
+            json.dumps(plan, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
     # --- manifest.json ---
     manifest = {
         "project_root_type": "generated-project-package",
@@ -581,10 +969,15 @@ def write_openclaw_bundle(output_dir: Path, spec: dict[str, Any]) -> None:
             "progress.txt",
             "architecture.md",
             "docs/stories",
+            ".openclaw/api-contract.json",
             ".openclaw/execution-plan.json",
+            ".openclaw/shared-plan.json",
+            ".openclaw/frontend-plan.json",
+            ".openclaw/backend-plan.json",
+            ".openclaw/integration-plan.json",
             ".openclaw/AGENTS.md",
         ],
-        "execution_mode": "story-by-story",
+        "execution_mode": "parallel-contract-loops",
         "primary_input": "spec.json",
         "policies": {
             "one_story_at_a_time": True,
@@ -592,6 +985,7 @@ def write_openclaw_bundle(output_dir: Path, spec: dict[str, Any]) -> None:
             "append_progress": True,
             "avoid_architecture_drift": True,
             "follow_phase_order": True,
+            "contract_first_parallelism": True,
         },
     }
     (openclaw_dir / "manifest.json").write_text(
@@ -609,7 +1003,14 @@ def write_openclaw_bundle(output_dir: Path, spec: dict[str, Any]) -> None:
             "primary_decisions": "decisions.md",
             "primary_progress_log": "progress.txt",
             "stories_dir": "docs/stories",
+            "api_contract": ".openclaw/api-contract.json",
             "execution_plan": ".openclaw/execution-plan.json",
+            "parallel_plans": {
+                "shared": ".openclaw/shared-plan.json",
+                "frontend": ".openclaw/frontend-plan.json",
+                "backend": ".openclaw/backend-plan.json",
+                "integration": ".openclaw/integration-plan.json",
+            },
         },
         "execution_expectations": {
             "story_driven": True,
@@ -617,6 +1018,7 @@ def write_openclaw_bundle(output_dir: Path, spec: dict[str, Any]) -> None:
             "record_progress": True,
             "preserve_generated_scope": True,
             "follow_phase_order": True,
+            "respect_shared_contract": True,
         },
     }
     (openclaw_dir / "repo-contract.json").write_text(

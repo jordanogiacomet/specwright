@@ -16,6 +16,8 @@ Key improvements in this version:
 - Draft-publish story when feature is present
 """
 
+import re
+
 from initializer.engine.validation_contract import (
     build_validation_bundle,
     detect_ecosystem,
@@ -320,6 +322,249 @@ def _lib_path(name):
 
 def _component_path(name):
     return f"src/components/{name}.tsx"
+
+
+# ---------------------------------------------------------------------------
+# Parallel execution metadata
+# ---------------------------------------------------------------------------
+
+_HTTP_CONTRACT_RE = re.compile(
+    r"\b(GET|POST|PUT|PATCH|DELETE)\s+(/[A-Za-z0-9_./:[\]-]+)"
+)
+
+
+def _story_text(story):
+    parts = [
+        story.get("story_key", ""),
+        story.get("title", ""),
+        story.get("description", ""),
+    ]
+    for item in story.get("acceptance_criteria", []):
+        if isinstance(item, str):
+            parts.append(item)
+    return " ".join(part for part in parts if isinstance(part, str)).lower()
+
+
+def _expand_expected_file_candidates(expected_files):
+    candidates = []
+
+    for item in expected_files:
+        if not isinstance(item, str):
+            continue
+
+        text = item.strip().strip("`")
+        if not text:
+            continue
+
+        text = text.split(" (", 1)[0].strip()
+        parts = [part.strip() for part in text.split(" or ")]
+        for part in parts:
+            if part:
+                candidates.append(part)
+
+    return candidates
+
+
+def _classify_expected_file_surface(path):
+    normalized = path.strip().lower()
+
+    if not normalized:
+        return "shared"
+
+    if normalized.startswith(("package.json", "tsconfig", ".env", ".gitignore", "readme", "vitest.config", "eslint.config", ".eslintrc")):
+        return "shared"
+
+    if normalized.startswith("src/middleware"):
+        return "integration"
+
+    if normalized.startswith(("docker-compose", "src/server", "src/api/", "src/app/api/", "src/collections/", "src/globals/", "src/models/", "src/jobs/", "src/payload.config", "payload.config")):
+        return "backend"
+
+    if normalized.startswith(("src/app/", "src/components/", "src/pages/", "public/", "src/styles/")):
+        return "frontend"
+
+    if normalized.startswith("src/lib/"):
+        leaf = normalized.rsplit("/", 1)[-1]
+
+        if any(keyword in leaf for keyword in ("db", "auth", "permission", "storage", "scheduler", "billing", "content-status", "rate-limit")):
+            return "backend"
+
+        if any(keyword in leaf for keyword in ("preview", "public-content", "api-client", "query-client")):
+            return "integration"
+
+        return "shared"
+
+    return "shared"
+
+
+def _derive_contract_domains(story):
+    story_key = story.get("story_key", "")
+    text = _story_text(story)
+
+    domains = []
+
+    def add(name, keywords):
+        if any(keyword in text for keyword in keywords) and name not in domains:
+            domains.append(name)
+
+    if story_key.startswith(("feature.authentication", "security.")):
+        domains.append("auth")
+    add("auth", ("login", "logout", "register", "registration", "session", "users", "password", "credential"))
+    add("authorization", ("roles", "permission", "rbac", "access control"))
+    add("content", ("content", "cms", "draft", "publish", "preview", "slug", "public site", "media"))
+    add("billing", ("payment", "billing", "subscription", "checkout", "invoice"))
+    add("todos", ("todo", "task list"))
+    add("workflow", ("deadline", "progress", "assignment", "reminder", "approval", "report", "team visibility"))
+    add("jobs", ("scheduled", "automation", "worker", "cron", "background job"))
+    add("operations", ("monitoring", "logging", "backup", "health"))
+    add("notifications", ("notification", "email", "webhook"))
+
+    return domains
+
+
+def _story_has_http_contract(story):
+    acceptance = story.get("acceptance_criteria", [])
+    for item in acceptance:
+        if not isinstance(item, str):
+            continue
+
+        lowered = item.lower()
+        if _HTTP_CONTRACT_RE.search(item):
+            return True
+        if "endpoint" in lowered and ("response" in lowered or re.search(r"\b[1-5]\d\d\b", lowered)):
+            return True
+    return False
+
+
+def _derive_execution_tracks(story, frontend_files, backend_files, shared_files, integration_files):
+    story_key = story.get("story_key", "")
+    text = _story_text(story)
+
+    if story_key == "bootstrap.repository":
+        return ["shared"]
+
+    if story_key in {"bootstrap.database", "bootstrap.backend"}:
+        return ["backend"]
+
+    if story_key == "bootstrap.frontend":
+        return ["frontend"]
+
+    frontend_hints = any(
+        keyword in text
+        for keyword in (
+            "frontend", "shell", "dashboard", "portal", "backoffice",
+            "navigation", "layout", "public site", "ui", "rendering",
+            "client", "form", "submit", "submission", "browser",
+        )
+    )
+    backend_hints = story_key.startswith(("feature.authentication", "security.")) or any(
+        keyword in text
+        for keyword in (
+            "backend", "database", "model", "api", "roles",
+            "permission", "billing", "subscription", "media", "worker",
+            "scheduler", "monitoring", "backup", "migration", "server",
+            "endpoint", "response", "middleware", "rate limit",
+            "login", "register", "password", "credential", "session",
+        )
+    )
+
+    has_frontend = bool(frontend_files) or frontend_hints
+    has_backend = bool(backend_files) or backend_hints or _story_has_http_contract(story)
+    has_contract_surface = bool(_derive_contract_domains(story))
+    has_integration_surface = bool(integration_files)
+
+    tracks = []
+
+    if has_frontend:
+        tracks.append("frontend")
+
+    if has_backend:
+        tracks.append("backend")
+
+    if ("frontend" in tracks and ("backend" in tracks or has_contract_surface)) or (
+        has_integration_surface and ("frontend" in tracks or "backend" in tracks)
+    ):
+        tracks.append("integration")
+
+    if not tracks:
+        if shared_files:
+            tracks.append("shared")
+        elif story_key.startswith(("feature.", "operations.", "infra.")):
+            tracks.append("backend")
+        else:
+            tracks.append("shared")
+
+    return tracks
+
+
+def _build_execution_metadata(story):
+    expected_files = story.get("expected_files", [])
+    frontend_files = []
+    backend_files = []
+    shared_files = []
+    integration_files = []
+
+    for path in _expand_expected_file_candidates(expected_files):
+        surface = _classify_expected_file_surface(path)
+        if surface == "frontend":
+            frontend_files.append(path)
+        elif surface == "backend":
+            backend_files.append(path)
+        elif surface == "integration":
+            integration_files.append(path)
+        else:
+            shared_files.append(path)
+
+    tracks = _derive_execution_tracks(
+        story,
+        frontend_files,
+        backend_files,
+        shared_files,
+        integration_files,
+    )
+    contract_domains = _derive_contract_domains(story)
+
+    if shared_files and "shared" not in tracks:
+        if "frontend" in tracks and "backend" in tracks:
+            integration_files.extend(shared_files)
+        elif "backend" in tracks:
+            backend_files.extend(shared_files)
+        elif "frontend" in tracks:
+            frontend_files.extend(shared_files)
+        elif "integration" in tracks:
+            integration_files.extend(shared_files)
+        shared_files = []
+
+    primary_track = tracks[0]
+    if "integration" in tracks:
+        primary_track = "integration"
+
+    modes = {}
+    if "shared" in tracks:
+        modes["shared"] = "shared-setup"
+    if "frontend" in tracks:
+        modes["frontend"] = "mock-first" if "integration" in tracks else "real-ui"
+    if "backend" in tracks:
+        modes["backend"] = "contract-first" if "integration" in tracks else "real-service"
+    if "integration" in tracks:
+        modes["integration"] = "wire-real-data"
+
+    return {
+        "tracks": tracks,
+        "primary_track": primary_track,
+        "parallelizable": primary_track != "shared" or len(tracks) > 1,
+        "contract_domains": contract_domains,
+        "frontend_files": frontend_files,
+        "backend_files": backend_files,
+        "shared_files": shared_files,
+        "integration_files": integration_files,
+        "modes": modes,
+    }
+
+
+def derive_execution_metadata(story):
+    """Public wrapper for execution-track heuristics used by benchmarking/reporting."""
+    return _build_execution_metadata(story)
 
 
 # ---------------------------------------------------------------------------
@@ -1747,5 +1992,8 @@ def generate_stories(spec):
                 manual_check="Can filter by pending/completed and sort by date or priority",
             ),
         )
+
+    for story in stories:
+        story["execution"] = _build_execution_metadata(story)
 
     return stories

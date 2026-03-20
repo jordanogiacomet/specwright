@@ -100,6 +100,17 @@ cd output/my-project
 OPENAI_API_KEY=sk-... initializer run --assist --reference ./designs/
 ```
 
+### Benchmark serial vs parallel loops
+
+```bash
+initializer benchmark output/editorial-control-center
+initializer benchmark output/editorial-control-center \
+  --candidate output/editorial-control-center-parallel \
+  --output reports/editorial-benchmark.md \
+  --json reports/editorial-benchmark.json \
+  --snapshot-dir reports/editorial-benchmark-snapshots
+```
+
 ## What Gets Generated
 
 ```

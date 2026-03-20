@@ -77,8 +77,442 @@ When the main agent makes code changes, record the new state here before moving 
 | SEC-006 | ADDED | ST-903 (password policy) auto-generated when authentication feature is present — enforces minLength:8 at story level |
 | SPLIT-001 | ADDED | Story-splitting heuristic: stories with >9 ACs or >8 expected files are auto-split into balanced parts with chained dependencies |
 | TESTS-006 | ADDED | 24 new tests for ST-902, ST-903, and story-splitting heuristic (refine_engine) |
+| BUG-024 | FIXED | Generated `ralph.sh --dry-run` no longer fails early on environments where `npx` is absent from `PATH`; `npx` is only required for non-dry-run execution |
+| BUG-025 | FIXED | Generated `ralph.sh` now quotes `contract_domains` correctly in the `jq join(", ")` expression instead of emitting `join(,)` |
+| E2E-003 | PARTIAL | Fresh parallel live run reproduced on isolated editorial clones; preview and runner-entry validated, but the third live run was manually stopped while the first shared-slice `next build` was still compiling |
 
 ---
+
+## Session 19 — Live Parallel E2E On Fresh Editorial Clones (Partial, 2026-03-20)
+
+### What happened
+
+1. **Kept the historical loop untouched**
+   - An older `output/editorial-control-center/./ralph.sh` process was still running when this session started.
+   - I did **not** reuse, resume, or kill that historical loop until after I had already moved all validation to fresh isolated clones.
+
+2. **Fresh clone #1 reproduced a real runner bug**
+   - Fresh clone: `output/editorial-control-center-parallel-e2e-20260320-134826`
+   - `./ralph.sh --dry-run` failed immediately with:
+     - `Error: npx not found. Install Node.js first.`
+   - This was a real product bug, not just environment setup:
+     - preview mode does not need `npx`
+     - the generated script checked `npx` before honoring `DRY_RUN=true`
+
+3. **Fixed BUG-024 in the generator**
+   - `initializer/renderers/codex_bundle.py`
+   - Moved the `npx` dependency check inside the existing `if [[ "$DRY_RUN" == false ]]; then ... fi` block
+   - Added coverage in `tests/unit/test_bundles.py` to assert `npx` is only required outside dry-run
+
+4. **Fresh clone #2 reproduced a second real runner bug**
+   - Fresh clone: `output/editorial-control-center-parallel-e2e-20260320-135023-rerun`
+   - `./ralph.sh --dry-run` passed after BUG-024
+   - The real `./ralph.sh` then failed in the generated shell with:
+     - `jq: error: syntax error, unexpected ','`
+   - Root cause:
+     - the generated line for contract domains was emitted as `join(", ")"` shell fragments, effectively producing `join(,)`
+
+5. **Fixed BUG-025 in the generator**
+   - `initializer/renderers/codex_bundle.py`
+   - Corrected the shell quoting so the generated script now contains:
+     - `contract_domains=$(jq -r ".stories[$index].contract_domains | join(\", \")" "$plan_file")`
+   - Added coverage in `tests/unit/test_bundles.py` to assert the exact generated line
+
+6. **Fresh clone #3 reached the real live run**
+   - Fresh clone: `output/editorial-control-center-parallel-e2e-20260320-140038-rerun2`
+   - `./ralph.sh --dry-run` completed successfully end-to-end
+   - Classification on the live clone remained correct:
+     - `shared`: `[]`
+     - `frontend`: `["ST-903", "ST-012", "ST-012b"]`
+     - `backend`: `["ST-902", "ST-903"]`
+     - `integration`: `["ST-902", "ST-903", "ST-012", "ST-012b"]`
+   - Real `./ralph.sh` entered the shared track and started `SH-ST-003`
+   - The inner Codex run made shared-slice changes and reached validation:
+     - `npm install`
+     - `npm run lint`
+     - `npm run typecheck`
+     - `npm test`
+     - `npm run build`
+   - `lint`, `typecheck`, and `test` eventually passed after internal shared-slice adjustments
+   - `next build` remained actively compiling for more than 6 minutes in the shared slice, and the root `progress.txt` never advanced past the shared slice start
+   - I manually interrupted the run to freeze a stable observed state instead of letting the clone continue mutating indefinitely
+
+### Files changed
+
+- `initializer/renderers/codex_bundle.py`
+- `tests/unit/test_bundles.py`
+- `analysis.md`
+
+### Exact commands executed
+
+```bash
+# Initial environment / process checks
+git status --short
+ps -eo pid,cmd | rg 'ralph\.sh|codex exec|initializer new --spec|initializer prepare' || true
+command -v codex && codex --version || true
+command -v jq && jq --version || true
+
+# Fresh clone #1
+RUN_SLUG="editorial-control-center-parallel-e2e-20260320-134826"
+TMP_SPEC="/tmp/editorial-control-center-parallel-e2e-20260320-134826.dkhyRj.json"
+jq --arg slug "$RUN_SLUG" '.project_slug = $slug | .answers.project_slug = $slug' output/editorial-control-center/spec.json > "$TMP_SPEC"
+./.venv/bin/python -m initializer new --spec "$TMP_SPEC"
+./.venv/bin/python -m initializer prepare "output/$RUN_SLUG"
+cd "output/$RUN_SLUG"
+./ralph.sh --dry-run
+
+# Patch / focused validation after BUG-024
+./.venv/bin/python -m pytest tests/unit/test_bundles.py -q
+./.venv/bin/python -m pytest tests/unit/test_story_graph.py tests/unit/test_bundles.py tests/unit/test_story_engine.py tests/unit/test_prepare_project.py tests/unit/test_refine_engine.py
+
+# Fresh clone #2
+RUN_SLUG="editorial-control-center-parallel-e2e-20260320-135023-rerun"
+TMP_SPEC="/tmp/editorial-control-center-parallel-e2e-20260320-135023-rerun.YsO7lP.json"
+jq --arg slug "$RUN_SLUG" '.project_slug = $slug | .answers.project_slug = $slug' output/editorial-control-center/spec.json > "$TMP_SPEC"
+./.venv/bin/python -m initializer new --spec "$TMP_SPEC"
+./.venv/bin/python -m initializer prepare "output/$RUN_SLUG"
+cd "output/$RUN_SLUG"
+./ralph.sh --dry-run
+PATH="/home/jordanogiacomet/.nvm/versions/node/v24.11.1/bin:$PATH" npm install
+PATH="/home/jordanogiacomet/.nvm/versions/node/v24.11.1/bin:$PATH" ./ralph.sh
+
+# Patch / focused validation after BUG-025
+./.venv/bin/python -m pytest tests/unit/test_bundles.py -q
+./.venv/bin/python -m pytest tests/unit/test_story_graph.py tests/unit/test_bundles.py tests/unit/test_story_engine.py tests/unit/test_prepare_project.py tests/unit/test_refine_engine.py
+
+# Fresh clone #3
+RUN_SLUG="editorial-control-center-parallel-e2e-20260320-140038-rerun2"
+TMP_SPEC="/tmp/editorial-control-center-parallel-e2e-20260320-140038-rerun2.rVqfdV.json"
+jq --arg slug "$RUN_SLUG" '.project_slug = $slug | .answers.project_slug = $slug' output/editorial-control-center/spec.json > "$TMP_SPEC"
+./.venv/bin/python -m initializer new --spec "$TMP_SPEC"
+./.venv/bin/python -m initializer prepare "output/$RUN_SLUG"
+cd "output/$RUN_SLUG"
+./ralph.sh --dry-run
+PATH="/home/jordanogiacomet/.nvm/versions/node/v24.11.1/bin:$PATH" npm install
+PATH="/home/jordanogiacomet/.nvm/versions/node/v24.11.1/bin:$PATH" ./ralph.sh
+
+# Final frozen-state inspection on clone #3
+sed -n '1,160p' output/editorial-control-center-parallel-e2e-20260320-140038-rerun2/progress.txt
+for f in output/editorial-control-center-parallel-e2e-20260320-140038-rerun2/.openclaw/progress/*.txt; do sed -n '1,120p' "$f"; done
+./.venv/bin/python - <<'PY'
+from pathlib import Path
+from initializer.runtime.story_scheduler import load_completed_from_progress
+path = Path('output/editorial-control-center-parallel-e2e-20260320-140038-rerun2/progress.txt')
+completed = sorted(load_completed_from_progress(path))
+invalid = [item for item in completed if '(' in item or ')' in item or not item.startswith('ST-')]
+print('completed=', completed)
+print('invalid=', invalid)
+print('targets=', {sid: sid in completed for sid in ['ST-012','ST-012b','ST-902','ST-903']})
+PY
+```
+
+### Validation performed
+
+1. **Generator guard suite after BUG-024**
+   - `./.venv/bin/python -m pytest tests/unit/test_story_graph.py tests/unit/test_bundles.py tests/unit/test_story_engine.py tests/unit/test_prepare_project.py tests/unit/test_refine_engine.py`
+   - Result: `160 passed`
+
+2. **Generator guard suite after BUG-025**
+   - `./.venv/bin/python -m pytest tests/unit/test_story_graph.py tests/unit/test_bundles.py tests/unit/test_story_engine.py tests/unit/test_prepare_project.py tests/unit/test_refine_engine.py`
+   - Result: `161 passed`
+
+3. **Fresh clone classification checks**
+   - Confirmed again on the fresh live clone:
+     - `ST-012` -> `frontend + integration`
+     - `ST-012b` -> `frontend + integration`
+     - `ST-902` -> `backend + integration`
+     - `ST-903` -> `frontend + backend + integration`
+
+4. **Fresh clone parser check after interrupted live run**
+   - `load_completed_from_progress()` returned:
+     - `completed=[]`
+     - `invalid=[]`
+   - This confirms the parser still returned only valid story IDs and did not emit track IDs or parenthesized tokens
+
+5. **Observed real root/track progress state on clone #3**
+   - Root `progress.txt` remained slice-level
+   - Final frozen entries:
+     - `[2026-03-20T14:07:05Z] [shared] SH-ST-003 (ST-003) — START — Initialize project repository (part 1 of 2)`
+     - `[2026-03-20T14:17:12Z] [shared] SH-ST-003 (ST-003) — RETRY — Attempt 2: Codex execution failed`
+   - No invalid token like `"(ST-012)"` appeared
+
+### Final state
+
+- Two new real runner bugs were found and fixed in the generator before the live run could proceed:
+  - BUG-024: dry-run incorrectly required `npx`
+  - BUG-025: generated `jq join(", ")` quoting for `contract_domains` was broken
+- The fresh third clone proved:
+  - preview now works end-to-end
+  - the generated runner enters the real shared slice
+  - root and per-track progress logs remain slice-level
+  - plan classification for `ST-012`, `ST-012b`, `ST-902`, and `ST-903` remains correct on the live clone
+  - the parser still returns only valid story IDs
+- The full shared -> frontend/backend -> integration live flow was **not** completed in this session because the third real run was manually interrupted while the first shared-slice `next build` was still actively compiling
+
+### Next steps
+
+1. Resume investigation from the third fresh clone if desired:
+   - `output/editorial-control-center-parallel-e2e-20260320-140038-rerun2`
+2. Decide whether the long-running shared-slice `next build` is:
+   - acceptable startup cost for this live loop, or
+   - a new runtime/product issue that needs its own focused reproduction outside the parallel runner
+3. If continuing the live E2E, start from the frozen third clone state only if you explicitly want to study the long shared-slice compile behavior; otherwise generate a fourth fresh clone and rerun from zero
+
+
+## Session 16 — Parallel Frontend/Backend/Integration Loops (Completed, 2026-03-20)
+
+### What was done
+
+1. **Added per-story parallel execution metadata**
+   - `initializer/engine/story_engine.py`
+   - Stories now carry `execution` metadata with:
+     - `tracks` (`shared`, `frontend`, `backend`, `integration`)
+     - `contract_domains` (auth, content, billing, todos, workflow, etc.)
+     - per-surface expected files (`frontend_files`, `backend_files`, `shared_files`, `integration_files`)
+     - per-track execution modes (`mock-first`, `contract-first`, `wire-real-data`, `shared-setup`)
+   - This preserves the serial story list while making the split machine-readable.
+
+2. **Bundle now emits a contract plus track plans**
+   - `initializer/renderers/openclaw_bundle.py`
+   - `execution-plan.json` still contains the serial topological plan, but now also includes `parallel_execution`
+   - New files written into `.openclaw/`:
+     - `api-contract.json`
+     - `shared-plan.json`
+     - `frontend-plan.json`
+     - `backend-plan.json`
+     - `integration-plan.json`
+   - `api-contract.json` aggregates architecture communication/boundaries, domain contract slices, and HTTP endpoints extracted from story acceptance criteria when available.
+   - `manifest.json` / `repo-contract.json` now point at the shared contract and per-track plans.
+
+3. **Story markdown now shows the split**
+   - `initializer/renderers/stories_renderer.py`
+   - Story files now expose:
+     - `Execution tracks`
+     - `Contract domains`
+
+4. **`ralph.sh` now orchestrates the 3-loop model**
+   - `initializer/renderers/codex_bundle.py`
+   - Generated runner now:
+     - runs `shared` setup first
+     - runs `frontend` and `backend` plans in parallel
+     - runs `integration` after both finish
+   - Added:
+     - `--track shared|frontend|backend|integration|all`
+     - `api-contract.json` awareness in prompts / AGENTS
+     - track-specific prompts with owned files + rules
+     - partial validation mode for pre-integration frontend/backend slices
+     - serialized migration/validation locks to reduce db/cache contention
+     - per-track progress files under `.openclaw/progress/` plus root `progress.txt` logging
+
+5. **Execution preview and tests updated**
+   - `initializer/flow/prepare_project.py`
+   - Preview now shows the parallel strategy and counts per track
+   - Tests updated / added in:
+     - `tests/unit/test_story_engine.py`
+     - `tests/unit/test_bundles.py`
+     - `tests/unit/test_prepare_project.py`
+
+### Files changed
+
+- `initializer/engine/story_engine.py`
+- `initializer/renderers/openclaw_bundle.py`
+- `initializer/renderers/codex_bundle.py`
+- `initializer/renderers/stories_renderer.py`
+- `initializer/flow/prepare_project.py`
+- `tests/unit/test_story_engine.py`
+- `tests/unit/test_bundles.py`
+- `tests/unit/test_prepare_project.py`
+
+### Validation performed
+
+1. `python3 -m py_compile initializer/renderers/codex_bundle.py initializer/renderers/openclaw_bundle.py initializer/engine/story_engine.py initializer/renderers/stories_renderer.py initializer/flow/prepare_project.py tests/unit/test_bundles.py tests/unit/test_story_engine.py tests/unit/test_prepare_project.py`
+2. Manual smoke script:
+   - generated stories via `generate_stories()`
+   - wrote `.openclaw/` bundle and verified:
+     - `api-contract.json` exists
+     - track plans exist
+     - auth story appears in frontend/backend/integration plans
+     - integration story depends on frontend/backend slices
+   - generated `ralph.sh` and verified `bash -n` passes
+3. Limitation:
+   - `pytest` is not installed in this environment (`python3 -m pytest` fails with `No module named pytest`), so the updated unit tests were syntax-checked but not executed end-to-end here
+
+### Remaining work for next session
+
+1. Install test dependencies and run the touched unit tests plus full suite
+2. Generate a real project with `initializer new` + `prepare` and inspect the emitted `.openclaw/*-plan.json` on a non-trivial editorial spec
+3. Run a true parallel `./ralph.sh` benchmark against a generated project to measure collision rate / validation friction in shared workspace mode
+
+---
+
+## Session 17 — Benchmark Tooling For Serial vs Parallel Ralph Loops (Completed, 2026-03-20)
+
+### What was done
+
+1. **Added a benchmark CLI command**
+   - `initializer benchmark <baseline> [--candidate <path>] [--output report.md] [--json report.json] [--snapshot-dir dir]`
+   - Wired in `initializer/cli.py`
+   - New implementation in `initializer/flow/benchmark_project.py`
+
+2. **Automated baseline/candidate analysis**
+   - Parses `progress.txt` for both legacy serial lines and new parallel slice lines
+   - Computes:
+     - start / end / duration
+     - completed stories or slices
+     - retries total
+     - stories with retry
+     - final failures
+     - first failure and time-to-first-failure
+     - build / type / test failure signal counts from retry/validation text
+     - migration warning counts
+   - Supports source-story aggregation for parallel runs using `SOURCE_STORY_ID` from the progress format
+
+3. **Implemented story bucket classification for waiting-time analysis**
+   - Reuses the generator heuristic via `derive_execution_metadata()` added to `initializer/engine/story_engine.py`
+   - Benchmark output now classifies stories into:
+     - `shared`
+     - `frontend`
+     - `backend`
+     - `integration`
+   - Also flags “mixed stories” that are likely collision hotspots (frontend + backend files, integration wiring, UI + HTTP contract in one story)
+
+4. **Added artifact capture and report output**
+   - Markdown report
+   - JSON payload
+   - Snapshot bundle with:
+     - copied `progress.txt`
+     - `git status --short` for the project path
+     - top changed files from `git diff --numstat`
+     - serialized summary JSON
+   - This captures the benchmark evidence without mutating the running generated project
+
+5. **Documented the command and added tests**
+   - `README.md` now shows benchmark usage examples
+   - Added `tests/unit/test_benchmark_project.py`
+   - Tests cover:
+     - serial progress parsing
+     - parallel slice aggregation by source story
+     - git change detection
+     - report/json/snapshot generation
+
+### Files changed
+
+- `initializer/cli.py`
+- `initializer/flow/benchmark_project.py`
+- `initializer/engine/story_engine.py`
+- `README.md`
+- `tests/unit/test_benchmark_project.py`
+
+### Validation performed
+
+1. `python3 -m py_compile initializer/cli.py initializer/flow/benchmark_project.py initializer/engine/story_engine.py tests/unit/test_benchmark_project.py`
+2. `python3 -m initializer benchmark output/editorial-control-center`
+   - Verified the command runs safely against the live baseline and prints:
+     - current serial metrics
+     - story bucket classification
+     - mixed stories
+     - risks
+     - critical-story table
+3. `python3 -m initializer benchmark output/editorial-control-center --output <tmp>/report.md --json <tmp>/report.json --snapshot-dir <tmp>/snaps`
+   - Verified report, JSON, and snapshot files are written successfully
+4. Limitation:
+   - `pytest` is still not installed in this environment, so the new test file was syntax-checked but not executed end-to-end here
+
+### Remaining work for next session
+
+1. Run `initializer benchmark` again after the current serial loop finishes to freeze the official baseline snapshot
+2. Generate the parallel candidate project from the same editorial spec and benchmark it with `--candidate`
+3. Decide whether the next benchmark iteration needs isolated worktrees per track based on the collision and migration-risk evidence
+
+---
+
+## Session 18 — Parallel Regression Cleanup + Handoff Refresh (Completed, 2026-03-20)
+
+### What was fixed
+
+1. **Root `progress.txt` contract is now explicitly slice-level**
+   - Decision: keep the root log as the append-only aggregate of slice execution (`[track] UNIT-ID (SOURCE-STORY)`), because it is the canonical record for the parallel runner.
+   - `initializer/runtime/story_scheduler.py`
+   - `load_completed_from_progress()` now:
+     - parses both legacy serial lines and parallel slice lines
+     - loads sibling `.openclaw/{shared,frontend,backend,integration}-plan.json` when present
+     - aggregates slice completion back to story-level only when **all planned units** for that source story are done
+     - no longer returns invalid tokens like `"(ST-012)"`
+
+2. **`refine_spec()` now guarantees final execution metadata**
+   - `initializer/ai/refine_engine.py`
+   - After `refine_stories()` and `_split_complex_stories()`, every final story is re-tagged with `derive_execution_metadata()`
+   - This fixes missing `execution` on:
+     - `ST-902`
+     - `ST-903`
+     - all split parts (for example `ST-012b`)
+
+3. **Removed classification drift between the bundle and the engine**
+   - `initializer/renderers/openclaw_bundle.py`
+   - The bundle no longer keeps its own weaker execution-classification fallback.
+   - If `story["execution"]` is missing or incomplete, it now delegates to `initializer.engine.story_engine.derive_execution_metadata()`.
+
+4. **Strengthened execution heuristics for cross-surface stories**
+   - `initializer/engine/story_engine.py`
+   - Execution classification now considers description + acceptance criteria, not just title/story_key
+   - `src/middleware.ts` is treated as an integration surface
+   - Shared utility files are reassigned to a real owning track when no `shared` track exists, so slices do not lose owned files
+   - Auth detection no longer false-positives on words like `author`
+   - Resulting repro classifications:
+     - `ST-012` → `frontend + integration`
+     - `ST-012b` → `frontend + integration`
+     - `ST-902` → `backend + integration`
+     - `ST-903` → `frontend + backend + integration`
+
+5. **Regression coverage added**
+   - `tests/unit/test_story_graph.py`
+     - root `progress.txt` slice aggregation
+     - do not complete a story until all planned units are done
+     - do not return `"(ST-012)"`
+   - `tests/unit/test_refine_engine.py`
+     - `refine_spec()` rehydrates execution metadata for security stories and split parts
+   - `tests/unit/test_story_engine.py`
+     - direct execution-track coverage for `ST-902` and `ST-903`
+   - `tests/unit/test_bundles.py`
+     - real pipeline coverage: `generate_stories() -> refine_spec() -> write_openclaw_bundle()`
+     - fallback coverage when a spec arrives without `execution`
+
+### Files changed
+
+- `initializer/runtime/story_scheduler.py`
+- `initializer/ai/refine_engine.py`
+- `initializer/engine/story_engine.py`
+- `initializer/renderers/openclaw_bundle.py`
+- `tests/unit/test_story_graph.py`
+- `tests/unit/test_refine_engine.py`
+- `tests/unit/test_story_engine.py`
+- `tests/unit/test_bundles.py`
+
+### Validation performed
+
+1. Required unit suite:
+   - `./.venv/bin/python -m pytest tests/unit/test_story_graph.py tests/unit/test_bundles.py tests/unit/test_story_engine.py tests/unit/test_prepare_project.py tests/unit/test_refine_engine.py`
+   - Result: **159 passed**
+
+2. Real repro against `output/editorial-control-center/spec.json`:
+   - Wrote a fresh temporary `.openclaw/` bundle from that spec
+   - Verified plan membership:
+     - `shared`: none of `ST-012`, `ST-012b`, `ST-902`, `ST-903`
+     - `frontend`: `ST-012`, `ST-012b`, `ST-903`
+     - `backend`: `ST-902`, `ST-903`
+     - `integration`: `ST-012`, `ST-012b`, `ST-902`, `ST-903`
+
+3. Real repro for progress parsing:
+   - Created temporary sibling track plans plus a root slice-level `progress.txt`
+   - `load_completed_from_progress()` returned `["ST-012", "ST-902"]`
+   - Confirmed `"(ST-012)"` is **not** returned
+
+### Current state / handoff
+
+- The regression cluster introduced by Session 16 parallel execution is fixed for progress parsing, execution metadata propagation, and bundle classification drift.
+- Root `progress.txt` is intentionally **slice-level**; any consumer that needs story-level completion must aggregate via the emitted track plans.
+- The requested validations were run without resuming the Ralph loop.
+- If a future session needs to continue parallel-run work, the next meaningful step is a live generated-project parallel execution run; do **not** start by re-debugging the classification or progress parser again unless new symptoms appear.
 
 ## Session 15 — Security Stories + Story-Splitting Heuristic (Completed, 2026-03-20)
 
