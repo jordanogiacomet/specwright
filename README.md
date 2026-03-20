@@ -1,54 +1,49 @@
 # Specwright
 
-**PRD-driven project initializer that generates executable projects for AI coding agents.**
+**PRD-driven project initializer that turns a prompt or structured spec into an executable repo for AI coding agents.**
 
-Specwright turns a project idea into a **running application** that Codex, Claude Code, or any AI coding agent can extend story-by-story — with zero ambiguity about what to build.
+Specwright takes a product idea, detects the project archetype, derives architecture and stories, scaffolds a runnable application, and prepares execution bundles for Codex/OpenClaw-style story-by-story loops.
 
+```text
+"editorial CMS with public site and preview"
+    -> archetype detection + optional AI discovery
+    -> canonical spec + architecture + domain model + enriched stories
+    -> runnable scaffold (Next.js + Payload or Next.js + node-api)
+    -> .codex/ + .openclaw/ execution bundle
+    -> ./ralph.sh drives Codex story-by-story
 ```
-"public site with CMS for editorial content"
-    ↓
-Specwright detects archetype, asks questions, analyzes design references
-    ↓
-Working Next.js + Payload + Postgres project
-  + spec.json, architecture.md, 18 enriched stories, ralph.sh
-    ↓
-./ralph.sh → Codex implements story-by-story → production-ready app
-```
+
+## What Specwright Generates
+
+- A canonical `spec.json` source of truth
+- `PRD.md`, `architecture.md`, `decisions.md`, `constraints.md`, `risks.md`, and a Mermaid architecture diagram
+- Enriched stories with acceptance criteria, scope boundaries, dependencies, expected files, and validation hints
+- A runnable scaffold with `package.json`, `docker-compose.yml`, `Dockerfile`, `.env.example`, and `.env.local`
+- A Codex bundle: `.codex/AGENTS.md` plus `ralph.sh`
+- An OpenClaw-style bundle: `.openclaw/execution-plan.json`, `api-contract.json`, track plans, `commands.json`, `manifest.json`, and `repo-contract.json`
 
 ## Why
 
-AI coding agents are powerful but directionless. They can write code, but they don't know *what* to build. Today's workflow is: paste a vague prompt, get something half-right, spend hours correcting drift.
+AI coding agents are good at writing code, but weak at deciding what the repo should contain, what is in scope, and how work should be sequenced. Specwright gives the agent a concrete execution contract:
 
-Specwright fixes this by creating a **structured execution contract** between you and the agent:
+- Deterministic archetype detection and default stack selection
+- Optional AI-assisted discovery, challenge resolution, and design-reference analysis
+- Derived domain model, architecture contracts, and project structure
+- Story-by-story execution metadata, including dependencies and owned files
+- Validation commands detected from the generated repo and written to `.openclaw/commands.json`
 
-- **Executable scaffold** — the generated project runs from day one (`npm install && docker compose up -d && npm run dev`)
-- **Enriched stories** — every story has acceptance criteria, scope boundaries, expected files, dependencies, and validation commands
-- **Domain model** — entities, states, transitions, roles, permissions, and business rules derived from the archetype
-- **Architecture contracts** — component communication, responsibility boundaries, and typical request flows
-- **Known challenges** — the AI identifies architectural problems specific to your project type and you decide how to resolve them
-- **Design references** — point to screenshots and the AI extracts colors, typography, layout, and components into your design system
-- **Signal governance** — separates what the AI inferred from what you confirmed; your answers always win
-- **Story-by-story execution** — the ralph loop feeds one story at a time to Codex, validates, records progress
+## Pipeline
 
-## The Pipeline
-
-```
-You describe a project
-    → Specwright detects the archetype (backoffice, client-portal, editorial-cms, etc.)
-    → Asks CLI questions (surface, deploy target)
-    → Runs AI-assisted discovery (follow-up questions)
-    → Presents known challenges and collects your decisions
-    → Analyzes design reference images (if provided)
-    → Generates canonical spec with confirmed signals
-    → Derives architecture, domain model, stories, constraints, risks, design system
-    → Generates executable scaffold (package.json, docker-compose, Payload config, etc.)
-    → Writes the complete execution package
-
-Optional: enrich with PRD intelligence (personas, success metrics, scope)
-Optional: edit architecture interactively (initializer architect)
-Optional: edit design system interactively (initializer design)
-
-Then: ./ralph.sh iterates stories through Codex CLI
+```text
+project idea / spec file
+    -> detect archetype
+    -> collect CLI answers
+    -> optional --assist discovery + challenge decisions
+    -> optional --reference image analysis
+    -> derive capabilities, architecture, stories, domain model, risks, design system
+    -> write scaffold + docs + execution bundles
+    -> optional enrich / prepare
+    -> ./ralph.sh executes stories with Codex CLI
 ```
 
 ## Quick Start
@@ -56,23 +51,47 @@ Then: ./ralph.sh iterates stories through Codex CLI
 ### Install
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 ```
 
-### Generate a project
+### Generate interactively
 
 ```bash
-# Full interactive flow with AI discovery
-OPENAI_API_KEY=sk-... initializer new --assist
-
-# With design references
-OPENAI_API_KEY=sk-... initializer new --assist --reference ./designs/
-
-# Without AI (deterministic only)
 initializer new
 ```
+
+### Generate with AI discovery
+
+```bash
+OPENAI_API_KEY=sk-... initializer new --assist
+OPENAI_API_KEY=sk-... initializer new --assist --reference ./designs
+```
+
+### Generate from a structured file
+
+```bash
+# JSON spec
+initializer new --spec examples/simple-task-manager.spec.json
+
+# YAML/playbook-style input
+initializer new --spec examples/next-payload-postgres.input.yaml
+```
+
+### Run the full pipeline
+
+```bash
+OPENAI_API_KEY=sk-... initializer run --assist --reference ./designs
+```
+
+`initializer run` orchestrates:
+
+```text
+new -> enrich -> prepare -> ralph
+```
+
+Use `--dry-run` to stop before Codex execution, or `--no-execute` to prepare the project and exit.
 
 ### Start the generated project
 
@@ -81,330 +100,206 @@ cd output/my-project
 npm install
 docker compose up -d
 npm run dev
-# → http://localhost:3000 (frontend)
-# → http://localhost:3000/admin (Payload admin, if editorial-cms)
 ```
+
+`.env.local` is generated automatically, so there is no copy step before local boot.
 
 ### Execute with Codex
 
 ```bash
 cd output/my-project
-./ralph.sh --dry-run     # preview the execution plan
-./ralph.sh               # run for real
-./ralph.sh --from ST-005 # resume from a specific story
+./ralph.sh --dry-run
+./ralph.sh
+
+# Optional overrides
+CODEX_MODEL=gpt-5.4 CODEX_EFFORT=medium ./ralph.sh
 ```
 
-### Full pipeline (generate + enrich + execute)
+## Input Formats
 
-```bash
-OPENAI_API_KEY=sk-... initializer run --assist --reference ./designs/
-```
+Specwright currently accepts three practical input styles:
 
-### Benchmark serial vs parallel loops
+1. Interactive prompt flow via `initializer new`
+2. JSON spec files, such as [`examples/simple-task-manager.spec.json`](examples/simple-task-manager.spec.json)
+3. YAML playbook-style inputs with `guided_answers` / `critical_confirmations`, such as [`examples/next-payload-postgres.input.yaml`](examples/next-payload-postgres.input.yaml)
 
-```bash
-initializer benchmark output/editorial-control-center
-initializer benchmark output/editorial-control-center \
-  --candidate output/editorial-control-center-parallel \
-  --output reports/editorial-benchmark.md \
-  --json reports/editorial-benchmark.json \
-  --snapshot-dir reports/editorial-benchmark-snapshots
-```
+When `--spec` points to a directory, Specwright will resolve `spec.json`, `spec.yaml`, or `spec.yml` automatically.
 
-## What Gets Generated
+## CLI Reference
 
-```
-output/my-project/
-├── package.json                 # dependencies and npm scripts (ready to install)
-├── docker-compose.yml           # postgres with health check
-├── Dockerfile                   # multi-stage production build
-├── .env.example                 # all environment variables
-├── tsconfig.json                # TypeScript config
-├── next.config.ts               # Next.js config (with Payload if editorial-cms)
-├── src/
-│   ├── app/                     # Next.js app router
-│   │   ├── layout.tsx
-│   │   ├── page.tsx
-│   │   ├── globals.css
-│   │   └── (payload)/           # Payload admin routes (if editorial-cms)
-│   ├── payload.config.ts        # Payload config (if editorial-cms)
-│   ├── collections/             # Payload collections (Users, etc.)
-│   ├── lib/                     # shared utilities
-│   └── components/              # UI components
-├── spec.json                    # structured source of truth
-├── PRD.md                       # product requirements
-├── architecture.md              # components, communication, boundaries, request flows
-├── decisions.md                 # architectural decisions
-├── progress.txt                 # append-only execution log
-├── ralph.sh                     # story-by-story Codex runner
-├── .codex/
-│   └── AGENTS.md                # instructions for Codex CLI
-├── .openclaw/
-│   ├── AGENTS.md                # instructions for OpenClaw
-│   ├── OPENCLAW.md              # handoff document
-│   ├── execution-plan.json      # ordered stories with phases and dependencies
-│   ├── manifest.json            # project metadata
-│   ├── repo-contract.json       # contract rules
-│   └── commands.json            # validation commands (pre-populated from stack)
-└── docs/
-    ├── stories/
-    │   ├── ST-001.md ... ST-018.md  # enriched stories with acceptance criteria
-    ├── constraints.md
-    ├── design-system.md
-    ├── risks.md
-    └── architecture/
-        └── diagram.mmd
-```
-
-## Enriched Stories
-
-Every story includes:
-
-```markdown
-# ST-011 — Implement authentication
-
-**Story key:** `feature.authentication`
-
-## Acceptance Criteria
-- [ ] Users can register with email and password
-- [ ] Users can log in and receive a valid session
-- [ ] Protected routes return 401 for unauthenticated requests
-- [ ] Passwords are hashed before storage
-- [ ] Payload Users collection has auth enabled
-
-## Scope Boundaries
-- Do NOT implement OAuth or social login in this story
-- Do NOT implement password reset or email verification
-
-## Expected Files
-- `src/lib/auth.ts`
-- `src/collections/Users.ts`
-- `src/app/(auth)/login/page.tsx`
-
-## Dependencies
-- `bootstrap.backend`
-- `bootstrap.frontend`
-
-## Validation
-- Run: `npm run build`
-- Run: `npm test`
-- Manual: Can register, log in, and access protected route
-```
-
-## Domain Model
-
-Specwright derives a complete domain model from the archetype:
-
-- **Entities** with fields, states, and valid transitions (e.g., Article: draft → in_review → published → archived)
-- **Roles** with concrete permissions (e.g., editor can create_article, submit_for_review)
-- **Auth model** derived from the backend (Payload auth, Django auth, custom JWT)
-- **Business rules** (e.g., "Only reviewers can approve content for publication")
-
-## Known Challenges
-
-During `--assist`, Specwright identifies architectural problems specific to your project and asks how you want to resolve them:
-
-```
-🔍 Known Challenges for Your Project
-
-Challenge 1/7: Cache Invalidation
-  When content is published, cached public pages may show stale content.
-
-  a) On-demand ISR revalidation (recommended)
-  b) Short TTL caching
-  c) Full static regeneration
-  s) Skip
-  c) Custom
-
-  Your choice [a]: a
-  → On-demand ISR revalidation
-
-✅ 5 decision(s) added to architecture.
-```
-
-Challenges by archetype: cache invalidation, preview vs production, SEO vs auth routes, media storage, content versioning, tenant isolation, payment flows, approval models, and more.
-
-## Design References
-
-Point Specwright to screenshots of designs you want to match. Create a folder (e.g. `designs/`) and drop your reference images there (PNG, JPG, WebP):
-
-```bash
-mkdir designs/
-# copy your screenshots into designs/
-
-initializer new --assist --reference ./designs/
-# or
-initializer design output/my-project --reference ./designs/
-```
-
-The AI analyzes the images and extracts colors (mapped to Tailwind), layout patterns, typography, and detected components into your design system. The agent then implements with those exact tokens.
-
-## Commands
-
-```bash
-# Generate
-initializer new [--assist] [--spec path] [--reference dir]
-
-# Full pipeline (generate + enrich + execute)
-initializer run [--assist] [--reference dir] [--dry-run] [--no-execute]
-
-# Enrich with PRD intelligence
-initializer enrich <path> [--review]
-
-# Edit architecture interactively
-initializer architect <path>
-
-# Edit design system interactively
-initializer design <path> [--reference dir]
-
-# Validate a generated project
-initializer validate <path>
-```
+| Command | Purpose |
+| --- | --- |
+| `initializer new [--assist] [--spec path] [--reference dir]` | Generate a project from an interactive prompt or structured input |
+| `initializer run [--assist] [--reference dir] [--dry-run] [--no-execute]` | Full pipeline: generate, enrich, prepare, execute |
+| `initializer plan [--spec path]` | Write a lightweight planning package to `plans/<slug>/` |
+| `initializer enrich <path> [--review]` | Derive PRD intelligence and optionally AI architecture review |
+| `initializer prepare <path>` | Regenerate execution bundles, detect commands, and print execution preview |
+| `initializer refine <path>` | Archive the current PRD to `docs/history/` and apply the current refinement pass |
+| `initializer doctor [path]` | Check the generated project package for core docs and bundle artifacts |
+| `initializer validate [path]` | Validate `spec.json`, semantic spec variants, and `prd.json` when present |
+| `initializer benchmark <path> [--candidate path] [--output file] [--json file] [--snapshot-dir dir]` | Compare serial vs parallel execution results from `progress.txt` and git state |
+| `initializer architect <path>` | Interactively edit architecture components, communication, boundaries, and decisions |
+| `initializer design <path> [--reference dir]` | Interactively edit the design system and optionally analyze references |
 
 ## Supported Archetypes
 
-| Archetype | Detected from | Default stack | Default features |
-|-----------|--------------|---------------|-----------------|
-| `editorial-cms` | "cms", "editorial", "blog" | nextjs + payload + postgres | auth, roles, media-library, draft-publish, preview, scheduled-publishing |
-| `marketplace` | "marketplace", "ecommerce" | nextjs + node-api + postgres | auth, payments, search, reviews, notifications |
-| `saas-app` | "saas", "subscription" | nextjs + node-api + postgres | auth, roles, billing, analytics, notifications |
-| `backoffice` | "backoffice", "operations team" | nextjs + node-api + postgres | auth, roles, api |
-| `client-portal` | "client portal", "approvals" | nextjs + node-api + postgres | auth, roles, notifications, api |
-| `work-organizer` | "task management", "organize work" | nextjs + node-api + postgres | auth, roles, api |
-| `knowledge-base` | "wiki", "documentation" | nextjs + node-api + postgres | auth, search, api |
-| `generic-web-app` | fallback | nextjs + node-api + postgres | auth, api |
+| Archetype | Default stack | Typical features |
+| --- | --- | --- |
+| `editorial-cms` | `nextjs + payload + postgres` | auth, roles, media-library, draft-publish, preview, scheduled-publishing |
+| `marketplace` | `nextjs + node-api + postgres` | auth, payments, search, reviews, notifications |
+| `saas-app` | `nextjs + node-api + postgres` | auth, roles, billing, analytics, notifications |
+| `backoffice` | `nextjs + node-api + postgres` | auth, roles, api |
+| `client-portal` | `nextjs + node-api + postgres` | auth, roles, notifications, api |
+| `work-organizer` | `nextjs + node-api + postgres` | auth, roles, api |
+| `knowledge-base` | `nextjs + node-api + postgres` | auth, search, api |
+| `todo-app` | `nextjs + node-api + postgres` | auth, api |
+| `generic-web-app` | `nextjs + node-api + postgres` | auth, api |
 
-## Signal Governance
+## Generated Project Layout
 
-Specwright distinguishes between:
-
-| Signal type | Source | Priority |
-|-------------|--------|----------|
-| **Inferred** | AI discovery engine | Low |
-| **Confirmed** | Your followup answers | High |
-| **Effective** | Merged result | Used by all engines |
-
-Your confirmed answers always override AI inference. If you say "no CMS", CMS is removed from capabilities, architecture, design system, risks — everywhere.
-
-## Architecture
-
-The system is a pipeline of deterministic engines with optional AI layers:
-
+```text
+output/my-project/
+├── spec.json
+├── PRD.md
+├── architecture.md
+├── decisions.md
+├── progress.txt
+├── README.md
+├── package.json
+├── docker-compose.yml
+├── Dockerfile
+├── .env.example
+├── .env.local
+├── .codex/
+│   └── AGENTS.md
+├── .openclaw/
+│   ├── AGENTS.md
+│   ├── OPENCLAW.md
+│   ├── api-contract.json
+│   ├── commands.json
+│   ├── execution-plan.json
+│   ├── shared-plan.json
+│   ├── frontend-plan.json
+│   ├── backend-plan.json
+│   ├── integration-plan.json
+│   ├── manifest.json
+│   └── repo-contract.json
+├── docs/
+│   ├── stories/
+│   ├── constraints.md
+│   ├── design-system.md
+│   ├── risks.md
+│   ├── architecture/
+│   │   └── diagram.mmd
+│   ├── prd-intelligence.json          # after `initializer enrich`
+│   └── architecture-review.json       # after `initializer enrich --review`
+├── ralph.sh
+└── src/
+    ├── app/
+    ├── components/
+    ├── lib/
+    └── __tests__/
 ```
-prompt → archetype_engine → capability_derivation → capability_engine
-    → challenges_engine (--assist) → knowledge_engine
-    → architecture_engine → story_engine → refine_engine
-    → domain_model_engine → project_structure_engine
-    → constraint_engine → design_system_engine → design_reference_engine
-    → risk_engine → diagram_engine
-    → scaffold_engine → writers → output
-```
 
-AI enters at three points:
-1. **Discovery** (`--assist`) — before capability derivation, to refine the spec
-2. **Challenges** (`--assist`) — after capabilities, to identify and resolve known problems
-3. **Design references** (`--reference`) — to extract visual tokens from screenshots
+Payload projects also include `src/payload.config.ts`, `src/collections/Users.ts`, admin route files under `src/app/(payload)/`, and `scripts/payload-migrations.mjs`.
 
-The AI never replaces the deterministic pipeline. It refines inputs to it.
+## Parallel Execution Bundle
+
+Specwright does more than emit a flat story list. The generated `.openclaw/` bundle includes:
+
+- `execution-plan.json`: full ordered plan with dependencies and phase metadata
+- `api-contract.json`: shared contract between frontend and backend slices
+- `shared-plan.json`, `frontend-plan.json`, `backend-plan.json`, `integration-plan.json`: loop-specific track plans
+- `commands.json`: detected `test`, `lint`, `build`, `typecheck`, `dev`, and migration commands
+
+`ralph.sh` consumes those files directly and runs Codex with owned-file guidance, retries, validation, migration hooks, and per-track execution metadata.
 
 ## Examples
 
-The `examples/` folder contains pre-filled spec files you can pass directly to `initializer new --spec` to generate a project without going through the interactive flow:
+The repository ships with examples you can run directly:
 
 ```bash
-# Minimal task manager (node-api + postgres) — good starting point
 initializer new --spec examples/simple-task-manager.spec.json
-
-# Editorial CMS (Next.js + Payload + postgres) — full content model
 initializer new --spec examples/next-payload-postgres.input.yaml
 ```
 
-The JSON spec in `simple-task-manager.spec.json` is annotated with comments explaining each field and valid options — open it to see the format before writing your own.
+There are also archetype playbooks under [`playbooks/`](playbooks) for built-in defaults such as [`playbooks/editorial-cms.yaml`](playbooks/editorial-cms.yaml).
 
 ## Development
 
 ```bash
-make install      # create .venv and install package
-make dev          # install with dev dependencies (pytest)
-make test         # run test suite
-make test-verbose # run tests with full output
-make clean        # remove __pycache__ and .pyc files
+make install
+make dev
+make test
+make test-verbose
+make clean
 ```
 
 ## Testing
 
 ```bash
-pip install -e ".[dev]"
-python -m pytest tests -q
+.venv/bin/pytest tests -q
 ```
 
-238+ tests covering: archetype detection, capability derivation, signal governance, story generation (enriched fields, dependencies, stack-aware paths), architecture engine (communication, boundaries), domain model (entities by archetype, roles, business rules), project structure (Node/Python/Go), challenges engine (per-archetype challenges, decisions), bundle generation (stack-aware commands), assist flow (discovery, conflicts, challenge decisions), and e2e editorial pipeline.
+Current suite size: **451 tests collected** across unit, integration, regression, and e2e coverage.
+
+Covered areas include:
+
+- archetype detection and capability derivation
+- assisted discovery merge and signal governance
+- story generation and execution metadata
+- architecture, domain model, risks, and project structure engines
+- bundle generation for Codex/OpenClaw
+- scaffold generation for Payload and node-api stacks
+- CLI flows such as `new`, `prepare`, `validate`, and benchmark analysis
 
 ## Requirements
 
 - Python 3.11+
 - `OPENAI_API_KEY` for `--assist`, `--reference`, and `enrich --review`
 - Node.js 22+ for generated projects
-- Docker for database services
-- npx + jq for `ralph.sh` (Codex CLI)
+- Docker for local database services
+- `jq`, `npx`, and the Codex CLI for `ralph.sh`
+- `flock` for the generated build script on Linux environments (`util-linux` package on most distros)
 
 ---
 
 ## PT-BR
 
-### O que é o Specwright
+### O que o projeto faz
 
-Specwright é um inicializador de projetos que gera **aplicações executáveis** para agentes de IA. Você descreve um projeto em texto livre, ele detecta o tipo, faz perguntas inteligentes, analisa referências visuais, identifica problemas arquiteturais, e gera um projeto completo que roda com `npm install && docker compose up -d && npm run dev`.
+O Specwright gera um repositório executável a partir de uma ideia de produto ou de um arquivo estruturado. Ele detecta o archetype, deriva arquitetura e stories, monta o scaffold, gera os bundles de execução em `.codex/` e `.openclaw/`, e deixa o projeto pronto para o `./ralph.sh` tocar story por story com o Codex CLI.
 
-### Por que isso importa
-
-Agentes de IA são poderosos mas não sabem *o que* construir. O Specwright cria um **contrato de execução estruturado**: spec canônico, modelo de domínio com entidades e estados, stories enriquecidas com critérios de aceite, arquitetura com contratos de comunicação, scope boundaries claros, e scaffold executável. O agente recebe uma story de cada vez e sabe exatamente o que fazer e o que não fazer.
-
-### Fluxo
-
-```
-Você descreve o projeto
-    → Specwright detecta o archetype
-    → Faz perguntas no CLI
-    → Roda discovery assistida por IA
-    → Apresenta desafios conhecidos e coleta suas decisões
-    → Analisa referências visuais (se fornecidas)
-    → Gera spec refinado com sinais confirmados
-    → Gera scaffold executável (package.json, docker-compose, Payload config)
-    → Deriva architecture, domain model, stories, constraints, risks, design system
-    → Escreve o pacote de execução
-
-Depois: ./ralph.sh itera stories pelo Codex CLI
-```
-
-### Como usar
+### Fluxo rápido
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 
-# Pipeline completo com discovery e referências visuais
-OPENAI_API_KEY=sk-... initializer run --assist --reference ./designs/
-
-# Gerar projeto com discovery assistida
-OPENAI_API_KEY=sk-... initializer new --assist
-
-# Editar arquitetura interativamente
-initializer architect output/meu-projeto
-
-# Editar design system interativamente
-initializer design output/meu-projeto --reference ./designs/
-
-# Rodar com Codex
-cd output/meu-projeto
-./ralph.sh --dry-run
-./ralph.sh
+OPENAI_API_KEY=sk-... initializer run --assist --reference ./designs
 ```
 
-### Governança de sinais
+Ou, se quiser partir de arquivos de exemplo:
 
-O Specwright separa sinais inferidos pela IA de sinais confirmados por você. Suas respostas sempre vencem. Se você diz "sem CMS", CMS é removido de capabilities, architecture, design system, risks — em todo lugar.
+```bash
+initializer new --spec examples/simple-task-manager.spec.json
+initializer new --spec examples/next-payload-postgres.input.yaml
+```
 
----
+### Comandos mais úteis
+
+- `initializer new`: gera um projeto novo
+- `initializer run`: roda o pipeline completo (`new -> enrich -> prepare -> ralph`)
+- `initializer prepare <path>`: reescreve os bundles e detecta comandos reais do repositório
+- `initializer doctor <path>`: verifica os artefatos principais do pacote gerado
+- `initializer benchmark <path> --candidate <path>`: compara uma execução serial com uma paralela
+
+### Requisitos
+
+- Python 3.11+
+- `OPENAI_API_KEY` para fluxos assistidos por IA
+- Node.js 22+, Docker, `jq`, `npx`, Codex CLI e `flock` para os projetos gerados
 
 ## License
 
