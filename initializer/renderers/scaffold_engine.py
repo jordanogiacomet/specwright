@@ -238,7 +238,7 @@ def _package_json(spec: dict[str, Any]) -> str:
         "description": name,
         "scripts": {
             "dev": "next dev",
-            "build": "next build",
+            "build": "flock .build.lock next build",
             "start": "next start",
             "lint": "eslint .",
             "test": "vitest run",

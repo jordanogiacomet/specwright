@@ -80,8 +80,308 @@ When the main agent makes code changes, record the new state here before moving 
 | BUG-024 | FIXED | Generated `ralph.sh --dry-run` no longer fails early on environments where `npx` is absent from `PATH`; `npx` is only required for non-dry-run execution |
 | BUG-025 | FIXED | Generated `ralph.sh` now quotes `contract_domains` correctly in the `jq join(", ")` expression instead of emitting `join(,)` |
 | E2E-003 | PARTIAL | Fresh parallel live run reproduced on isolated editorial clones; preview and runner-entry validated, but the third live run was manually stopped while the first shared-slice `next build` was still compiling |
+| BUG-026 | FIXED | Generated `ralph.sh` validation: (a) reordered to build→typecheck→lint→test so `.next` artifacts exist for Server Component imports; (b) removed `rm -rf .next` which caused clientReferenceManifest races when Codex processes write to `.next` concurrently with validation builds; (c) added `flock .build.lock` around `next build` in generated `package.json` so ALL build invocations (validation + Codex) are serialized |
+| BUG-027 | FIXED | `run_migrations()` docker wait loop `for attempt in $(seq 1 10)` overwrote the outer retry loop's `attempt` variable — renamed to `db_wait_attempt` |
 
 ---
+
+## Session 22 — Build Serialization Fix + Zero-Retry Parallel Run (In Progress, 2026-03-20)
+
+### What happened
+
+1. **Launched live parallel run on the fresh post-Session-21 clone (Run 1 — killed by host reboot)**
+   - Clone: `output/editorial-control-center-parallel-e2e-20260320-120725-validationguard`
+   - Collected partial throughput data:
+
+   | # | Slice | Track | Duration | Retries |
+   |---|-------|-------|----------|---------|
+   | 1 | SH-ST-003 | shared | 6m37s | 0 (scaffold skip) |
+   | 2 | FE-ST-901 | frontend | 6m13s | 0 |
+   | 3 | BE-ST-004 | backend | 11m49s | 0 |
+   | 4 | FE-ST-006 | frontend | 27m48s | 1 (clientReferenceManifest) |
+   | 5 | BE-ST-005 | backend | 17m05s | 1 (clientReferenceManifest) |
+   | 6 | BE-ST-901 | backend | 10m58s | 0 |
+   | 7 | FE-ST-001 | frontend | KILLED | ? |
+   | 8 | BE-ST-001 | backend | KILLED | ? |
+
+   - 6 slices in ~47min, 2 unnecessary retries from the same root cause
+
+2. **Identified BUG-026: validation order + `.next` race condition**
+   - `run_track_validation()` ran `test` before `build` — tests importing Server Components failed with `clientReferenceManifest` after `rm -rf .next`
+   - First fix: reordered to build→typecheck→lint→test
+   - **First fix was insufficient** — second run (`editorial-control-center-parallel-e2e-20260320-135819-validationorder`) still hit `clientReferenceManifest` during build itself
+   - Root cause refined: `rm -rf .next` deletes the directory while a parallel Codex process is writing build artifacts — the lock serializes validation but does NOT block Codex sandbox builds
+   - Revised fix: removed `rm -rf .next` entirely (`next build` already recompiles from source)
+
+3. **Added `flock .build.lock` to generated `package.json` build script**
+   - `initializer/renderers/scaffold_engine.py`: `"build": "flock .build.lock next build"`
+   - This serializes ALL `npm run build` invocations — whether from ralph.sh validation or from Codex inside its sandbox
+   - Solves the fundamental `.next` singleton problem for Payload/Next.js stacks
+
+4. **Identified BUG-027: `run_migrations()` variable leak**
+   - `for attempt in $(seq 1 10)` in the docker wait loop overwrites the outer retry loop's `attempt` variable
+   - After migrations, `$attempt=10` → retry condition `10 ≤ 2` = false → retry loop exits immediately
+   - Progress showed "succeeded on attempt 10" instead of the real attempt number
+   - Fix: renamed to `for db_wait_attempt in $(seq 1 10)`
+
+5. **Launched clean run with all fixes (Run 3 — still active at session end)**
+   - Clone: `output/editorial-control-center-parallel-e2e-20260320-144024-buildlock`
+   - **0 retries across 8 completed slices** (vs 2 retries in Run 1):
+
+   | # | Slice | Track | Duration | Retries |
+   |---|-------|-------|----------|---------|
+   | 1 | SH-ST-003 | shared | 4m03s | 0 (scaffold skip) |
+   | 2 | FE-ST-901 | frontend | 4m13s | 0 |
+   | 3 | BE-ST-004 | backend | 8m24s | 0 |
+   | 4 | FE-ST-006 | frontend | 7m48s | 0 |
+   | 5 | BE-ST-005 | backend | 10m01s | 0 |
+   | 6 | FE-ST-001 | frontend | 11m52s | 0 |
+   | 7 | BE-ST-901 | backend | 9m20s | 0 |
+   | 8 | FE-ST-002 | frontend | 10m05s | 0 |
+
+   - Run still active with `FE-ST-007` and `BE-ST-001` in progress at session end
+   - `flock` confirmed effective: `FE-ST-006` completed in 7m48s (vs 27m48s with retries in Run 1)
+
+### Files changed
+
+- `initializer/renderers/codex_bundle.py` — validation order fix, `rm -rf .next` removed, BUG-027 variable rename
+- `initializer/renderers/scaffold_engine.py` — `flock .build.lock` in generated `package.json`
+- `tests/unit/test_bundles.py` — updated test for no-delete-next assertion
+- `analysis.md`
+
+### Exact commands executed
+
+```bash
+# Run 1: Live run on Session 21 clone (killed by host reboot)
+cd output/editorial-control-center-parallel-e2e-20260320-120725-validationguard
+PATH="/home/jordanogiacomet/.nvm/versions/node/v24.11.1/bin:$PATH" ./ralph.sh
+
+# Post-reboot analysis, BUG-026 first fix (order only), tests
+./.venv/bin/python -m pytest tests/unit/test_bundles.py -q  # 57 passed
+./.venv/bin/python -m pytest tests/unit/test_story_graph.py tests/unit/test_bundles.py tests/unit/test_story_engine.py tests/unit/test_prepare_project.py tests/unit/test_refine_engine.py  # 166 passed
+
+# Run 2: order-fix-only clone — still hit clientReferenceManifest
+RUN_SLUG="editorial-control-center-parallel-e2e-20260320-135819-validationorder"
+TMP_SPEC="/tmp/${RUN_SLUG}.json"
+jq --arg slug "$RUN_SLUG" '.project_slug = $slug | .answers.project_slug = $slug' output/editorial-control-center/spec.json > "$TMP_SPEC"
+./.venv/bin/python -m initializer new --spec "$TMP_SPEC"
+./.venv/bin/python -m initializer prepare "output/$RUN_SLUG"
+cd "output/$RUN_SLUG" && rm -rf node_modules && npm install
+PATH="/home/jordanogiacomet/.nvm/versions/node/v24.11.1/bin:$PATH" ./ralph.sh
+
+# BUG-026 revised fix + flock + BUG-027 fix, tests
+./.venv/bin/python -m pytest tests/unit/test_bundles.py -q  # 57 passed
+./.venv/bin/python -m pytest tests/unit/test_story_graph.py tests/unit/test_bundles.py tests/unit/test_story_engine.py tests/unit/test_prepare_project.py tests/unit/test_refine_engine.py  # 166 passed
+
+# Run 3: full-fix clone — 0 retries
+RUN_SLUG="editorial-control-center-parallel-e2e-20260320-144024-buildlock"
+TMP_SPEC="/tmp/${RUN_SLUG}.json"
+jq --arg slug "$RUN_SLUG" '.project_slug = $slug | .answers.project_slug = $slug' output/editorial-control-center/spec.json > "$TMP_SPEC"
+./.venv/bin/python -m initializer new --spec "$TMP_SPEC"
+./.venv/bin/python -m initializer prepare "output/$RUN_SLUG"
+cd "output/$RUN_SLUG" && rm -rf node_modules && npm install
+PATH="/home/jordanogiacomet/.nvm/versions/node/v24.11.1/bin:$PATH" ./ralph.sh
+```
+
+### Validation performed
+
+1. **Regression suites after each fix iteration** — all green (57 bundles, 166 full)
+2. **Run 2 confirmed first fix was insufficient** — `clientReferenceManifest` still appeared during build
+3. **Run 3 confirmed full fix works** — 8 slices, 0 retries, `flock` serialization effective
+
+### Final state
+
+- BUG-026 fully resolved: validation reordered + `rm -rf .next` removed + `flock` serialization
+- BUG-027 fixed: migration docker-wait variable no longer leaks into retry counter
+- Run 3 still active at session end (clone: `editorial-control-center-parallel-e2e-20260320-144024-buildlock`)
+- Next session should: check Run 3 completion, collect final throughput data, verify integration track runs correctly after frontend+backend complete
+
+### Clones from this session
+
+- `output/editorial-control-center-parallel-e2e-20260320-120725-validationguard` — Run 1 (killed by reboot, 6 slices, 2 retries)
+- `output/editorial-control-center-parallel-e2e-20260320-135819-validationorder` — Run 2 (order-fix only, still had races)
+- `output/editorial-control-center-parallel-e2e-20260320-144024-buildlock` — Run 3 (full fix, 0 retries, still active)
+
+---
+
+## Session 21 — Prompt Guardrails For Runner-Managed Parallel Validation (Completed, 2026-03-20)
+
+### What happened
+
+1. **Reconfirmed the frozen clone before any new mutation**
+   - Clone used for live continuation:
+     - `output/editorial-control-center-parallel-e2e-20260320-113257-bootstrapskip`
+   - Verified before rerun:
+     - clone worktree was clean
+     - root `progress.txt` was still slice-level
+     - per-track `.openclaw/progress/*.txt` matched the frozen snapshot
+     - `load_completed_from_progress()` returned:
+       - `completed=['ST-003']`
+       - `invalid=[]`
+     - bootstrap scaffold sentinels still matched the generator scaffold:
+       - `package.json`
+       - `tsconfig.json`
+       - `eslint.config.mjs`
+     - `eslint.config.js` was still absent
+
+2. **Resumed the real run on the frozen clone and reconfirmed ordering**
+   - Ran the generated runner directly in the frozen clone.
+   - Observed:
+     - `shared` did **not** re-enter Codex
+     - `SH-ST-003` was skipped as already done
+     - `frontend` and `backend` started again in parallel
+   - Root progress appended fresh slice `START` entries for the in-progress units:
+     - `FE-ST-901`
+     - `BE-ST-004`
+   - This preserved the critical ordering invariant:
+     - `shared` first
+     - `frontend/backend` parallel second
+     - `integration` still not started at the frozen point
+
+3. **Captured a new real runner/runtime blocker: prompt-induced self-validation races**
+   - The generated slice prompt still told Codex:
+     - `Run the validation that makes sense for this slice`
+     - retry prompt: `Re-run validation after the fix`
+   - In practice, both live Codex slices started running heavyweight validation and runtime commands **inside** the Codex step instead of returning control to `ralph.sh`:
+     - frontend `FE-ST-901` explored and modified Payload admin shell files, copied `.env.example` to `.env.local`, started docker, ran backup scripts, and inspected operational/runtime surfaces outside a narrow mock-first slice
+     - backend `BE-ST-004` ran direct DB verification, `db:migrate`, `db:migrate:status`, `db:migrate:create`, and multiple `next build` invocations inside the Codex step
+   - This defeated the runner’s serialized validation lock and created shared-workspace contention in `.next/`.
+
+4. **Observed concrete failure signatures from concurrent in-slice validation**
+   - The frozen-clone live run produced build failures consistent with parallel `.next` artifact races:
+     - missing `.next/types/app/(payload)/admin/[[...segments]]/page.ts`
+     - missing `.next/server/pages-manifest.json`
+   - A bounded build repro showed:
+     - compile phase succeeded
+     - the build could still stall in later Next lint/type-check/page-data phases while other build processes were active
+   - At the time the run was interrupted to freeze evidence:
+     - root `progress.txt` still had no new `DONE`/`BLOCKED` lines beyond the repeated `START`s
+     - the blocker was no longer bootstrap ordering; it was validation behavior inside the Codex step
+
+5. **Fixed the product at the minimal locus: generated prompt contract in `ralph.sh`**
+   - `initializer/renderers/codex_bundle.py`
+   - Updated the normal slice prompt so generated `ralph.sh` now explicitly says:
+     - do **not** proactively run repo-wide validation or shared-runtime commands during the Codex step
+     - `ralph.sh` will run serialized migrations and official validation after Codex exits
+     - manual validation outside the slice’s owned files or track should be left to the runner or later slices
+   - Updated the retry prompt with the same contract:
+     - do **not** proactively rerun repo-wide validation or shared-runtime commands
+     - let `ralph.sh` rerun serialized validation after the fix
+   - This keeps the existing validation locks meaningful instead of letting Codex create its own competing build/migration activity.
+
+6. **Added focused regression coverage**
+   - `tests/unit/test_bundles.py`
+   - New assertions verify the generated `ralph.sh` now includes:
+     - the no-heavy-validation guidance
+     - the runner-managed validation handoff
+     - the cross-track manual-validation guardrail
+     - the retry-path guardrail
+
+### Files changed
+
+- `initializer/renderers/codex_bundle.py`
+- `tests/unit/test_bundles.py`
+- `analysis.md`
+
+### Exact commands executed
+
+```bash
+# Reconfirm frozen clone state
+git -C output/editorial-control-center-parallel-e2e-20260320-113257-bootstrapskip status --short
+sed -n '1,40p' output/editorial-control-center-parallel-e2e-20260320-113257-bootstrapskip/progress.txt
+for f in output/editorial-control-center-parallel-e2e-20260320-113257-bootstrapskip/.openclaw/progress/*.txt; do sed -n '1,40p' "$f"; done
+./.venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+from initializer.runtime.story_scheduler import load_completed_from_progress
+from initializer.renderers import scaffold_engine
+clone = Path('output/editorial-control-center-parallel-e2e-20260320-113257-bootstrapskip')
+spec = json.loads((clone / 'spec.json').read_text())
+print(sorted(load_completed_from_progress(clone / 'progress.txt')))
+print((clone / 'package.json').read_text() == scaffold_engine._package_json(spec))
+print((clone / 'tsconfig.json').read_text() == scaffold_engine._tsconfig(spec))
+print((clone / 'eslint.config.mjs').read_text() == scaffold_engine._eslint_config())
+print((clone / 'eslint.config.js').exists())
+PY
+
+# Resume live run on frozen clone
+cd output/editorial-control-center-parallel-e2e-20260320-113257-bootstrapskip
+PATH="/home/jordanogiacomet/.nvm/versions/node/v24.11.1/bin:$PATH" ./ralph.sh
+
+# Evidence captured while the live run was active
+tail -n 120 progress.txt
+ps -eo pid,etimes,cmd | rg 'editorial-control-center-parallel-e2e-20260320-113257-bootstrapskip/node_modules/.bin/next build|payload-migrations|ralph.sh' || true
+sed -n '1,120p' .ralph-prompt.F1jXM8.md
+sed -n '1,120p' .ralph-prompt.FpswnK.md
+sed -n '1,220p' src/lib/db.ts
+sed -n '1,120p' .env.example
+
+# Product patch
+./.venv/bin/python -m pytest tests/unit/test_bundles.py -q
+./.venv/bin/python -m pytest tests/unit/test_story_graph.py tests/unit/test_bundles.py tests/unit/test_story_engine.py tests/unit/test_prepare_project.py tests/unit/test_refine_engine.py
+
+# Fresh post-fix clone generation
+RUN_SLUG="editorial-control-center-parallel-e2e-20260320-120725-validationguard"
+TMP_SPEC="/tmp/${RUN_SLUG}.json"
+jq --arg slug "$RUN_SLUG" '.project_slug = $slug | .answers.project_slug = $slug' output/editorial-control-center/spec.json > "$TMP_SPEC"
+./.venv/bin/python -m initializer new --spec "$TMP_SPEC"
+./.venv/bin/python -m initializer prepare "output/$RUN_SLUG"
+rg -n "serialized migrations and official validation|shared-runtime commands|source story lists manual validation outside this slice's owned files or track" "output/$RUN_SLUG/ralph.sh"
+cd "output/$RUN_SLUG"
+./ralph.sh --dry-run
+PATH="/home/jordanogiacomet/.nvm/versions/node/v24.11.1/bin:$PATH" npm install
+```
+
+### Validation performed
+
+1. **Focused regression suite after the prompt fix**
+   - `./.venv/bin/python -m pytest tests/unit/test_bundles.py -q`
+   - Result: `56 passed`
+
+2. **Required guard suite after the prompt fix**
+   - `./.venv/bin/python -m pytest tests/unit/test_story_graph.py tests/unit/test_bundles.py tests/unit/test_story_engine.py tests/unit/test_prepare_project.py tests/unit/test_refine_engine.py`
+   - Result: `165 passed`
+
+3. **Fresh generated clone contains the new guardrails**
+   - Fresh clone:
+     - `output/editorial-control-center-parallel-e2e-20260320-120725-validationguard`
+   - Confirmed generated `ralph.sh` includes:
+     - no proactive repo-wide validation/shared-runtime commands during the Codex step
+     - runner-managed serialized validation handoff
+     - cross-track manual-validation guardrail
+     - retry-path handoff back to `ralph.sh`
+
+4. **Execution ordering still preserved after the prompt fix**
+   - `./ralph.sh --dry-run` on the fresh clone still showed:
+     - `shared` loop first
+     - `frontend` and `backend` loops second
+     - `integration` loop last
+   - The fix did **not** change execution plan ordering or track membership.
+
+5. **Bootstrap contract remained closed**
+   - No parser/classification/bootstrap regression was reopened in this session.
+   - The earlier confirmed invariants remained valid:
+     - root `progress.txt` stays slice-level
+     - `ST-003` still aggregates correctly as completed
+     - `ST-012`, `ST-012b`, `ST-902`, `ST-903` classification remained out of scope and untouched
+
+### Final state
+
+- The frozen clone reproduced a real new blocker after Session 20:
+  - the live runner ordering was correct
+  - the next failure mode was prompt-induced self-validation inside parallel slices
+- The blocker was fixed at the intended primary locus:
+  - `initializer/renderers/codex_bundle.py`
+- Regression coverage was added and the required suite passed:
+  - `56 passed`
+  - `165 passed`
+- A fresh clone generated from the same editorial spec now emits the new guardrails and preserves the expected parallel strategy.
+
+### Notes
+
+- The frozen-clone live run was intentionally interrupted after the blocker was isolated to preserve evidence instead of letting the clone continue mutating.
+- Some changes made inside the disposable frozen clone during the repro were slice-local generated-project edits, not product-source edits; they were **not** backported into Specwright.
+- The historical loop in `output/editorial-control-center` remained untouched throughout this session.
 
 ## Session 20 — Bootstrap Skip-If-Ready Fix + Fresh Parallel Re-run (Partial, 2026-03-20)
 

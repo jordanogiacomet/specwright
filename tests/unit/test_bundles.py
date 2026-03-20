@@ -914,6 +914,33 @@ def test_codex_ralph_sh_adds_bootstrap_scaffold_preservation_guardrails_to_promp
     assert "Do NOT modify files outside `Owned Files` unless a failing validation points directly to them." in content
 
 
+def test_codex_ralph_sh_tells_parallel_slices_to_leave_heavy_validation_to_runner(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert "Do NOT proactively run repo-wide validation or shared-runtime commands" in content
+    assert "`ralph.sh` will run serialized migrations and official validation for this slice after Codex exits" in content
+    assert "If the source story lists manual validation outside this slice's owned files or track" in content
+    assert "Avoid commands that mutate shared build artifacts or shared runtime state" in content
+    assert "Let `ralph.sh` rerun serialized migrations and official validation after you finish" in content
+
+
+def test_codex_ralph_sh_does_not_delete_next_during_validation(tmp_path):
+    """BUG-026 (revised): rm -rf .next during validation caused races.
+
+    Deleting .next while a parallel Codex process writes build artifacts
+    triggers clientReferenceManifest corruption.  next build already does
+    a full recompile from source, so the deletion is both unnecessary and
+    harmful.  The generated ralph.sh must NOT contain rm -rf .next.
+    """
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert 'rm -rf "$SCRIPT_DIR/.next"' not in content
+
+
 def test_codex_ralph_sh_handles_payload_migration_sentinels(tmp_path):
     spec = _make_spec(stack={"frontend": "nextjs", "backend": "payload", "database": "postgres"})
     write_codex_bundle(tmp_path, spec)

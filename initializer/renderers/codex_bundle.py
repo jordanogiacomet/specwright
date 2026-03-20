@@ -592,7 +592,7 @@ run_migrations() {{
         if ! docker compose -f "$SCRIPT_DIR/docker-compose.yml" ps --status running 2>/dev/null | grep -q postgres; then
             echo "  Starting database container..."
             docker compose -f "$SCRIPT_DIR/docker-compose.yml" up -d postgres 2>/dev/null || true
-            for attempt in $(seq 1 10); do
+            for db_wait_attempt in $(seq 1 10); do
                 if docker compose -f "$SCRIPT_DIR/docker-compose.yml" ps --status running 2>/dev/null | grep -q postgres; then
                     break
                 fi
@@ -622,13 +622,24 @@ run_track_validation() {{
     VALIDATION_ERRORS=""
     echo "Running validation..."
 
+    # NOTE: Do NOT delete .next here.  Removing it while a parallel Codex
+    # process may be writing build artifacts causes clientReferenceManifest
+    # races.  `next build` already does a full recompile from source files;
+    # stale .next cache does not cause corruption on its own.
+
+    # Build runs FIRST so that .next artifacts exist for tests that import
+    # Server Components (avoids clientReferenceManifest errors after rm -rf .next).
     if [[ "$validation_mode" == "partial" ]]; then
-        run_validation_command "test" "$TEST_CMD" "Tests" "warn"
-        run_validation_command "lint" "$LINT_CMD" "Lint" "warn"
-        run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "block"
         run_validation_command "build" "$BUILD_CMD" "Build" "block"
+        run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "block"
+        run_validation_command "lint" "$LINT_CMD" "Lint" "warn"
+        run_validation_command "test" "$TEST_CMD" "Tests" "warn"
         return 0
     fi
+
+    run_validation_command "build" "$BUILD_CMD" "Build" "contract"
+    run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "contract"
+    run_validation_command "lint" "$LINT_CMD" "Lint" "contract"
 
     if [[ "$REQUIRES_REAL_TESTS" == "true" ]] && validation_policy_contains "block_on" "test"; then
         if [[ -z "$TEST_CMD" ]] || [[ "$TEST_RUNNER" == "none" ]]; then
@@ -641,10 +652,6 @@ run_track_validation() {{
     else
         run_validation_command "test" "$TEST_CMD" "Tests" "contract"
     fi
-
-    run_validation_command "lint" "$LINT_CMD" "Lint" "contract"
-    run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "contract"
-    run_validation_command "build" "$BUILD_CMD" "Build" "contract"
 }}
 
 run_codex_unit() {{
@@ -709,7 +716,10 @@ PROMPT_EOF
 - Read `spec.json` and `architecture.md` if the slice needs more context
 - Make minimal, targeted changes for this slice only
 - Do not change unrelated tracks or rewrite the architecture
-- Record validation results in your response
+- Record any targeted checks you ran in your response
+- Do NOT proactively run repo-wide validation or shared-runtime commands (`npm run build`, `npm run lint`, `npm test`, `npm run typecheck`, `npm run db:migrate*`, `docker compose ...`) during the Codex step
+- `ralph.sh` will run serialized migrations and official validation for this slice after Codex exits
+- If the source story lists manual validation outside this slice's owned files or track, leave that for the runner or a later slice instead of forcing it here
 
 ## CRITICAL: Database Migrations
 
@@ -722,7 +732,9 @@ PROMPT_EOF
         cat <<'PROMPT_EOF'
 ## Validation
 
-Run the validation that makes sense for this slice. Partial slices should still keep the repo buildable.
+- `ralph.sh` will run migrations and the official validation for this slice after Codex exits.
+- If you need extra confidence while editing, prefer the narrowest non-conflicting check possible.
+- Avoid commands that mutate shared build artifacts or shared runtime state unless you are debugging a concrete failure from this attempt.
 PROMPT_EOF
     }} > "$prompt_file"
 
@@ -805,7 +817,8 @@ PROMPT_EOF
 1. Read the error above carefully
 2. Fix only the issue that blocked the slice
 3. Preserve the shared contract and track ownership boundaries
-4. Re-run validation after the fix
+4. Do NOT proactively rerun repo-wide validation or shared-runtime commands (`npm run build`, `npm run lint`, `npm test`, `npm run typecheck`, `npm run db:migrate*`, `docker compose ...`) unless the previous error requires a targeted repro
+5. Let `ralph.sh` rerun serialized migrations and official validation after you finish
 
 ## CRITICAL: Database Migrations
 
@@ -816,7 +829,7 @@ PROMPT_EOF
         cat <<'PROMPT_EOF'
 ## Validation
 
-After fixing, run build/typecheck and any relevant tests.
+After fixing, prefer the smallest targeted repro only when needed. `ralph.sh` will rerun migrations, build, typecheck, lint, and tests as applicable after Codex exits.
 PROMPT_EOF
     }} > "$prompt_file"
 
