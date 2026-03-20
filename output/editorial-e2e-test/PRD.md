@@ -60,19 +60,16 @@ Editorial validation run
 - **ST-005**: Setup backend service
 - **ST-006**: Create frontend application
 - **ST-007**: Implement authentication
-- **ST-008**: Implement role-based access control (part 1 of 2)
-- **ST-008b**: Implement role-based access control (part 2 of 2)
-- **ST-009**: Implement media library (part 1 of 2)
-- **ST-009b**: Implement media library (part 2 of 2)
+- **ST-008**: Implement role-based access control
+- **ST-009**: Implement media library
 - **ST-010**: Implement draft and publish workflow
 - **ST-011**: Implement content preview
 - **ST-012**: Implement scheduled publishing (part 1 of 2)
 - **ST-012b**: Implement scheduled publishing (part 2 of 2)
-- **ST-013**: Implement public site pages (part 1 of 2)
-- **ST-013b**: Implement public site pages (part 2 of 2)
+- **ST-013**: Implement public site pages
 - **ST-900**: Setup monitoring and logging
 - **ST-901**: Implement backups
 - **ST-902**: Add rate limiting to auth endpoints
 - **ST-903**: Enforce password policy
 
-Total: 22 stories. See `docs/stories/` for full details.
+Total: 19 stories. See `docs/stories/` for full details.

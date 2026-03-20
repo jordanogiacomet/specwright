@@ -47,9 +47,8 @@ Internal editorial control center for content, media, and newsroom operations.
 
 ## Stories
 
-- **ST-001**: Define CMS content model (part 1 of 3) (product)
-- **ST-001b**: Define CMS content model (part 2 of 3) (product)
-- **ST-001c**: Define CMS content model (part 3 of 3) (product)
+- **ST-001**: Define CMS content model (part 1 of 2) (product)
+- **ST-001b**: Define CMS content model (part 2 of 2) (product)
 - **ST-002**: Configure static asset delivery
 - **ST-003**: Initialize project repository (part 1 of 2) (bootstrap)
 - **ST-003b**: Initialize project repository (part 2 of 2) (bootstrap)
@@ -57,10 +56,8 @@ Internal editorial control center for content, media, and newsroom operations.
 - **ST-005**: Setup backend service (bootstrap)
 - **ST-006**: Create frontend application (bootstrap)
 - **ST-007**: Implement authentication (feature)
-- **ST-008**: Implement role-based access control (part 1 of 2) (feature)
-- **ST-008b**: Implement role-based access control (part 2 of 2) (feature)
-- **ST-009**: Implement media library (part 1 of 2) (feature)
-- **ST-009b**: Implement media library (part 2 of 2) (feature)
+- **ST-008**: Implement role-based access control (feature)
+- **ST-009**: Implement media library (feature)
 - **ST-010**: Implement draft and publish workflow (feature)
 - **ST-011**: Implement content preview (feature)
 - **ST-012**: Implement public site pages (part 1 of 2) (product)

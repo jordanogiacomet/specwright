@@ -1,5 +1,5 @@
 {
-  "total_stories": 22,
+  "total_stories": 19,
   "phases": [
     "bootstrap",
     "features",
@@ -17,12 +17,12 @@
     {
       "phase": "features",
       "description": "Core feature implementation",
-      "count": 12
+      "count": 10
     },
     {
       "phase": "product",
       "description": "Product shell and navigation",
-      "count": 3
+      "count": 2
     },
     {
       "phase": "domain",
@@ -151,7 +151,7 @@
     },
     {
       "id": "ST-008",
-      "title": "Implement role-based access control (part 1 of 2)",
+      "title": "Implement role-based access control",
       "status": "pending",
       "phase": "features",
       "story_key": "feature.roles",
@@ -162,7 +162,7 @@
     },
     {
       "id": "ST-009",
-      "title": "Implement media library (part 1 of 2)",
+      "title": "Implement media library",
       "status": "pending",
       "phase": "features",
       "story_key": "feature.media-library",
@@ -195,28 +195,6 @@
       "order": 14
     },
     {
-      "id": "ST-008b",
-      "title": "Implement role-based access control (part 2 of 2)",
-      "status": "pending",
-      "phase": "features",
-      "story_key": "feature.roles-part-2",
-      "depends_on": [
-        "feature.roles"
-      ],
-      "order": 15
-    },
-    {
-      "id": "ST-009b",
-      "title": "Implement media library (part 2 of 2)",
-      "status": "pending",
-      "phase": "features",
-      "story_key": "feature.media-library-part-2",
-      "depends_on": [
-        "feature.media-library"
-      ],
-      "order": 16
-    },
-    {
       "id": "ST-010",
       "title": "Implement draft and publish workflow",
       "status": "pending",
@@ -226,11 +204,11 @@
         "product.cms-content-model",
         "feature.roles"
       ],
-      "order": 17
+      "order": 15
     },
     {
       "id": "ST-013",
-      "title": "Implement public site pages (part 1 of 2)",
+      "title": "Implement public site pages",
       "status": "pending",
       "phase": "product",
       "story_key": "product.public-site-rendering",
@@ -239,7 +217,7 @@
         "feature.draft-publish",
         "infra.static-delivery"
       ],
-      "order": 18
+      "order": 16
     },
     {
       "id": "ST-011",
@@ -251,7 +229,7 @@
         "feature.draft-publish",
         "product.public-site-rendering"
       ],
-      "order": 19
+      "order": 17
     },
     {
       "id": "ST-012",
@@ -264,18 +242,7 @@
         "feature.draft-publish",
         "product.public-site-rendering"
       ],
-      "order": 20
-    },
-    {
-      "id": "ST-013b",
-      "title": "Implement public site pages (part 2 of 2)",
-      "status": "pending",
-      "phase": "product",
-      "story_key": "product.public-site-rendering-part-2",
-      "depends_on": [
-        "product.public-site-rendering"
-      ],
-      "order": 21
+      "order": 18
     },
     {
       "id": "ST-012b",
@@ -286,7 +253,7 @@
       "depends_on": [
         "feature.scheduled-publishing"
       ],
-      "order": 22
+      "order": 19
     }
   ]
 }

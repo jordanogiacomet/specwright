@@ -273,8 +273,9 @@ def _build_password_policy_story(spec):
 # Story-splitting heuristic
 # -------------------------------------------------------
 
-MAX_AC_COUNT = 7
+MAX_AC_COUNT = 9
 MAX_EXPECTED_FILES = 8
+MIN_AC_PER_PART = 4
 
 _SUFFIX_LETTERS = "bcdefghijklmnopqrstuvwxyz"
 
@@ -288,7 +289,11 @@ def _split_complex_stories(spec):
         acs = story.get("acceptance_criteria", [])
         files = story.get("expected_files", [])
 
-        if len(acs) <= MAX_AC_COUNT and len(files) <= MAX_EXPECTED_FILES:
+        exceeds_threshold = len(acs) > MAX_AC_COUNT or len(files) > MAX_EXPECTED_FILES
+        # Don't split if each part would have fewer than MIN_AC_PER_PART ACs
+        worth_splitting = len(acs) >= MIN_AC_PER_PART * 2
+
+        if not exceeds_threshold or not worth_splitting:
             new_stories.append(story)
             continue
 

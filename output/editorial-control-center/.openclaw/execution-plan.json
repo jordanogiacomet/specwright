@@ -1,5 +1,5 @@
 {
-  "total_stories": 22,
+  "total_stories": 19,
   "phases": [
     "bootstrap",
     "features",
@@ -17,12 +17,12 @@
     {
       "phase": "features",
       "description": "Core feature implementation",
-      "count": 10
+      "count": 8
     },
     {
       "phase": "product",
       "description": "Product shell and navigation",
-      "count": 5
+      "count": 4
     },
     {
       "phase": "domain",
@@ -106,7 +106,7 @@
     },
     {
       "id": "ST-001",
-      "title": "Define CMS content model (part 1 of 3)",
+      "title": "Define CMS content model (part 1 of 2)",
       "status": "pending",
       "phase": "product",
       "story_key": "product.cms-content-model",
@@ -151,7 +151,7 @@
     },
     {
       "id": "ST-001b",
-      "title": "Define CMS content model (part 2 of 3)",
+      "title": "Define CMS content model (part 2 of 2)",
       "status": "pending",
       "phase": "product",
       "story_key": "product.cms-content-model-part-2",
@@ -162,7 +162,7 @@
     },
     {
       "id": "ST-008",
-      "title": "Implement role-based access control (part 1 of 2)",
+      "title": "Implement role-based access control",
       "status": "pending",
       "phase": "features",
       "story_key": "feature.roles",
@@ -173,7 +173,7 @@
     },
     {
       "id": "ST-009",
-      "title": "Implement media library (part 1 of 2)",
+      "title": "Implement media library",
       "status": "pending",
       "phase": "features",
       "story_key": "feature.media-library",
@@ -206,39 +206,6 @@
       "order": 15
     },
     {
-      "id": "ST-001c",
-      "title": "Define CMS content model (part 3 of 3)",
-      "status": "pending",
-      "phase": "product",
-      "story_key": "product.cms-content-model-part-3",
-      "depends_on": [
-        "product.cms-content-model-part-2"
-      ],
-      "order": 16
-    },
-    {
-      "id": "ST-008b",
-      "title": "Implement role-based access control (part 2 of 2)",
-      "status": "pending",
-      "phase": "features",
-      "story_key": "feature.roles-part-2",
-      "depends_on": [
-        "feature.roles"
-      ],
-      "order": 17
-    },
-    {
-      "id": "ST-009b",
-      "title": "Implement media library (part 2 of 2)",
-      "status": "pending",
-      "phase": "features",
-      "story_key": "feature.media-library-part-2",
-      "depends_on": [
-        "feature.media-library"
-      ],
-      "order": 18
-    },
-    {
       "id": "ST-010",
       "title": "Implement draft and publish workflow",
       "status": "pending",
@@ -248,7 +215,7 @@
         "product.cms-content-model",
         "feature.roles"
       ],
-      "order": 19
+      "order": 16
     },
     {
       "id": "ST-012",
@@ -261,7 +228,7 @@
         "feature.draft-publish",
         "infra.static-delivery"
       ],
-      "order": 20
+      "order": 17
     },
     {
       "id": "ST-011",
@@ -273,7 +240,7 @@
         "feature.draft-publish",
         "product.public-site-rendering"
       ],
-      "order": 21
+      "order": 18
     },
     {
       "id": "ST-012b",
@@ -284,7 +251,7 @@
       "depends_on": [
         "product.public-site-rendering"
       ],
-      "order": 22
+      "order": 19
     }
   ]
 }

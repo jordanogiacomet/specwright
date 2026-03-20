@@ -312,6 +312,14 @@ def test_split_does_not_touch_small_stories():
     assert result["stories"][0]["id"] == "ST-099"
 
 
+def test_split_skips_stories_just_at_threshold():
+    """8 ACs is at the boundary but not over MAX_AC_COUNT=9, so no split."""
+    story = _make_story(ac_count=8, file_count=2)
+    spec = _make_spec(stories=[story])
+    result = _split_complex_stories(spec)
+    assert len(result["stories"]) == 1
+
+
 def test_split_triggers_on_high_ac_count():
     story = _make_story(ac_count=10, file_count=2)
     spec = _make_spec(stories=[story])
@@ -320,10 +328,19 @@ def test_split_triggers_on_high_ac_count():
 
 
 def test_split_triggers_on_high_file_count():
-    story = _make_story(ac_count=3, file_count=10)
+    """High files trigger split only if ACs are also worth splitting (>=8)."""
+    story = _make_story(ac_count=10, file_count=10)
     spec = _make_spec(stories=[story])
     result = _split_complex_stories(spec)
     assert len(result["stories"]) == 2
+
+
+def test_split_skips_high_files_with_few_acs():
+    """Many files but too few ACs to produce meaningful parts — skip split."""
+    story = _make_story(ac_count=3, file_count=10)
+    spec = _make_spec(stories=[story])
+    result = _split_complex_stories(spec)
+    assert len(result["stories"]) == 1
 
 
 def test_split_part1_keeps_original_key():

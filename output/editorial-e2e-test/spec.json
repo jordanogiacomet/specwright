@@ -430,14 +430,18 @@
     },
     {
       "id": "ST-008",
-      "title": "Implement role-based access control (part 1 of 2)",
       "story_key": "feature.roles",
+      "title": "Implement role-based access control",
       "description": "Define roles (admin, editor, reviewer), permissions, and enforce authorization boundaries.",
       "acceptance_criteria": [
         "Role model is defined with the following roles: admin, editor, reviewer",
         "`editor` can create and update drafts but cannot publish, manage users, or change system configuration",
         "`reviewer` can review submissions and publish approved content but cannot manage users or global system configuration",
-        "`admin` can manage users, configuration, and override editorial publish/archive actions"
+        "`admin` can manage users, configuration, and override editorial publish/archive actions",
+        "Protected endpoints and admin collection/global access rules enforce the role matrix consistently",
+        "Unauthorized role access returns 403",
+        "Database migration is generated and executed for all schema changes (run `npm run db:migrate:create` then `npm run db:migrate`)",
+        "Payload access control functions explicitly gate editorial collections/globals by admin/editor/reviewer responsibilities"
       ],
       "scope_boundaries": [
         "Do NOT implement granular per-field permissions unless required by spec",
@@ -445,7 +449,8 @@
         "All migrations MUST be created in `src/lib/migrations/` using `npm run db:migrate:create` — do NOT create migration files in any other directory (e.g. `src/models/migrations/`)"
       ],
       "expected_files": [
-        "src/lib/permissions.ts"
+        "src/lib/permissions.ts",
+        "src/collections/Users.ts (updated with roles field)"
       ],
       "depends_on": [
         "feature.authentication"
@@ -459,75 +464,15 @@
       }
     },
     {
-      "id": "ST-008b",
-      "title": "Implement role-based access control (part 2 of 2)",
-      "story_key": "feature.roles-part-2",
-      "description": "Define roles (admin, editor, reviewer), permissions, and enforce authorization boundaries.",
-      "acceptance_criteria": [
-        "Protected endpoints and admin collection/global access rules enforce the role matrix consistently",
-        "Unauthorized role access returns 403",
-        "Database migration is generated and executed for all schema changes (run `npm run db:migrate:create` then `npm run db:migrate`)",
-        "Payload access control functions explicitly gate editorial collections/globals by admin/editor/reviewer responsibilities"
-      ],
-      "scope_boundaries": [
-        "Do NOT implement granular per-field permissions unless required by spec",
-        "Do NOT implement a permissions admin UI — enforce in backend only",
-        "All migrations MUST be created in `src/lib/migrations/` using `npm run db:migrate:create` — do NOT create migration files in any other directory (e.g. `src/models/migrations/`)"
-      ],
-      "expected_files": [
-        "src/collections/Users.ts (updated with roles field)"
-      ],
-      "depends_on": [
-        "feature.roles"
-      ],
-      "validation": {
-        "commands": [
-          "npm run build",
-          "npm test"
-        ],
-        "manual_check": "Editor can edit drafts but gets 403 on publish-only actions; reviewer can approve/publish; admin can manage users."
-      }
-    },
-    {
       "id": "ST-009",
-      "title": "Implement media library (part 1 of 2)",
       "story_key": "feature.media-library",
+      "title": "Implement media library",
       "description": "Allow uploading, listing, and managing media assets.",
       "acceptance_criteria": [
         "Users can upload images and files",
         "Uploaded media is stored and retrievable via URL",
         "Media list view shows uploaded assets with thumbnails",
-        "File size and type validation is enforced on upload"
-      ],
-      "scope_boundaries": [
-        "Do NOT redefine the CMS schema here — extend the existing `media` collection from the CMS content model story with upload/storage behavior only",
-        "Do NOT implement image optimization or CDN delivery in this story",
-        "Do NOT implement media usage tracking across content",
-        "All migrations MUST be created in `src/lib/migrations/` using `npm run db:migrate:create` — do NOT create migration files in any other directory (e.g. `src/models/migrations/`)",
-        "Do NOT configure S3 or external object storage — use Payload's local disk adapter for now"
-      ],
-      "expected_files": [
-        "src/collections/Media.ts",
-        "src/payload.config.ts (updated with upload and storage settings)"
-      ],
-      "depends_on": [
-        "feature.authentication",
-        "product.cms-content-model"
-      ],
-      "validation": {
-        "commands": [
-          "npm run build",
-          "npm test"
-        ],
-        "manual_check": "Can upload an image or document, retrieve its URL, and see validation reject disallowed file types."
-      }
-    },
-    {
-      "id": "ST-009b",
-      "title": "Implement media library (part 2 of 2)",
-      "story_key": "feature.media-library-part-2",
-      "description": "Allow uploading, listing, and managing media assets.",
-      "acceptance_criteria": [
+        "File size and type validation is enforced on upload",
         "Database migration is generated and executed for all schema changes (run `npm run db:migrate:create` then `npm run db:migrate`)",
         "Payload Media collection uses the local filesystem upload adapter (store uploads in a `media/` directory at the project root)",
         "The local filesystem path is treated as an adapter boundary so object storage can be introduced later without changing callers",
@@ -541,10 +486,13 @@
         "Do NOT configure S3 or external object storage — use Payload's local disk adapter for now"
       ],
       "expected_files": [
+        "src/collections/Media.ts",
+        "src/payload.config.ts (updated with upload and storage settings)",
         ".env.example (updated with storage configuration)"
       ],
       "depends_on": [
-        "feature.media-library"
+        "feature.authentication",
+        "product.cms-content-model"
       ],
       "validation": {
         "commands": [
@@ -700,44 +648,14 @@
     },
     {
       "id": "ST-013",
-      "title": "Implement public site pages (part 1 of 2)",
       "story_key": "product.public-site-rendering",
+      "title": "Implement public site pages",
       "description": "Create public-facing pages for published content: posts, pages.",
       "acceptance_criteria": [
         "Public route `/posts/[slug]` exists and renders published content for the `posts` collection",
         "Public route `/pages/[slug]` exists and renders published content for the `pages` collection",
         "Each public route loads content by unique slug from the matching CMS collection instead of hardcoded page data",
-        "Public pages use SSR or ISR for SEO (meta tags, Open Graph)"
-      ],
-      "scope_boundaries": [
-        "Do NOT redefine CMS collections or globals in this story — reuse the content model already established",
-        "Do NOT implement comments or user interaction on public pages",
-        "Do NOT implement search on public pages — that is a separate story",
-        "Do NOT implement pagination in this story — show latest items only"
-      ],
-      "expected_files": [
-        "src/app/(public)/posts/[slug]/page.tsx",
-        "src/app/(public)/pages/[slug]/page.tsx",
-        "src/app/(public)/page.tsx"
-      ],
-      "depends_on": [
-        "product.cms-content-model",
-        "feature.draft-publish",
-        "infra.static-delivery"
-      ],
-      "validation": {
-        "commands": [
-          "npm run build"
-        ],
-        "manual_check": "Public pages render published content from CMS data loaders; draft content returns 404; homepage pulls from globals when configured."
-      }
-    },
-    {
-      "id": "ST-013b",
-      "title": "Implement public site pages (part 2 of 2)",
-      "story_key": "product.public-site-rendering-part-2",
-      "description": "Create public-facing pages for published content: posts, pages.",
-      "acceptance_criteria": [
+        "Public pages use SSR or ISR for SEO (meta tags, Open Graph)",
         "Only published content is visible on public routes — draft content returns 404",
         "Public pages are accessible without authentication",
         "Published-only filtering is enforced in the data loader/query layer, not just in the UI",
@@ -750,11 +668,16 @@
         "Do NOT implement pagination in this story — show latest items only"
       ],
       "expected_files": [
+        "src/app/(public)/posts/[slug]/page.tsx",
+        "src/app/(public)/pages/[slug]/page.tsx",
+        "src/app/(public)/page.tsx",
         "src/components/PublicLayout.tsx",
         "src/lib/public-content.ts"
       ],
       "depends_on": [
-        "product.public-site-rendering"
+        "product.cms-content-model",
+        "feature.draft-publish",
+        "infra.static-delivery"
       ],
       "validation": {
         "commands": [

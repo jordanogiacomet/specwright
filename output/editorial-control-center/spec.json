@@ -410,7 +410,7 @@
   "stories": [
     {
       "id": "ST-001",
-      "title": "Define CMS content model (part 1 of 3)",
+      "title": "Define CMS content model (part 1 of 2)",
       "story_key": "product.cms-content-model",
       "description": "Define CMS content model — collections: pages, posts, authors, media; globals: site-settings, homepage.",
       "acceptance_criteria": [
@@ -419,7 +419,10 @@
         "`pages` can reference `media` for hero or inline assets.",
         "`pages` is modeled so the later draft/publish story can add editorial status handling without redefining the schema.",
         "Payload collection `posts` exists with fields `title`, `slug`, `excerpt`, `body`, `author`, `featured_image`, `published_at` — Manage news and editorial articles.",
-        "`posts` includes a unique `slug` used by the later public route `/posts/[slug]` and preview lookup."
+        "`posts` includes a unique `slug` used by the later public route `/posts/[slug]` and preview lookup.",
+        "`posts` includes `author` relation to `authors`, optional `featured_image` relation to `media`.",
+        "`posts` is modeled so the later draft/publish story can add editorial status handling without redefining the schema.",
+        "Payload collection `authors` exists with fields `name`, `slug`, `bio`, `avatar` — Manage author profiles referenced by posts."
       ],
       "scope_boundaries": [
         "Do NOT implement draft/publish transitions, preview mode, or scheduled publishing in this story.",
@@ -429,7 +432,8 @@
       "expected_files": [
         "src/payload.config.ts (updated with collections and globals)",
         "src/collections/Pages.ts",
-        "src/collections/Posts.ts"
+        "src/collections/Posts.ts",
+        "src/collections/Authors.ts"
       ],
       "depends_on": [
         "bootstrap.backend"
@@ -443,43 +447,13 @@
     },
     {
       "id": "ST-001b",
-      "title": "Define CMS content model (part 2 of 3)",
+      "title": "Define CMS content model (part 2 of 2)",
       "story_key": "product.cms-content-model-part-2",
       "description": "Define CMS content model — collections: pages, posts, authors, media; globals: site-settings, homepage.",
       "acceptance_criteria": [
-        "`posts` includes `author` relation to `authors`, optional `featured_image` relation to `media`.",
-        "`posts` is modeled so the later draft/publish story can add editorial status handling without redefining the schema.",
-        "Payload collection `authors` exists with fields `name`, `slug`, `bio`, `avatar` — Manage author profiles referenced by posts.",
         "`authors` can reference `media` for avatar/headshot assets.",
         "Payload collection `media` exists with fields `alt_text`, `caption`, `file`, `mime_type`, `size` — Manage uploaded images and downloadable files.",
-        "Payload global `site-settings` exists with fields `site_name`, `navigation`, `footer`, `default_seo` — Store navigation, SEO defaults, and shared site metadata."
-      ],
-      "scope_boundaries": [
-        "Do NOT implement draft/publish transitions, preview mode, or scheduled publishing in this story.",
-        "Do NOT build media library UI or public page routes here — only define the schema and registration points.",
-        "Do NOT add collections/globals beyond the ones named in this story unless `spec.json` is updated first."
-      ],
-      "expected_files": [
-        "src/collections/Authors.ts",
-        "src/collections/Media.ts",
-        "src/globals/SiteSettings.ts"
-      ],
-      "depends_on": [
-        "product.cms-content-model"
-      ],
-      "validation": {
-        "commands": [
-          "npm run build"
-        ],
-        "manual_check": "Admin can create sample page/post entries, assign author/media relations, and edit globals without missing fields."
-      }
-    },
-    {
-      "id": "ST-001c",
-      "title": "Define CMS content model (part 3 of 3)",
-      "story_key": "product.cms-content-model-part-3",
-      "description": "Define CMS content model — collections: pages, posts, authors, media; globals: site-settings, homepage.",
-      "acceptance_criteria": [
+        "Payload global `site-settings` exists with fields `site_name`, `navigation`, `footer`, `default_seo` — Store navigation, SEO defaults, and shared site metadata.",
         "Payload global `homepage` exists with fields `hero`, `featured_posts`, `featured_pages`, `seo` — Store homepage hero content and featured editorial slots.",
         "Media requirements are explicit: support image, document uploads in the `media` collection.",
         "Only the collections/globals listed in this story are created; no extra editorial schema is invented outside the spec.",
@@ -493,10 +467,12 @@
         "Do NOT add collections/globals beyond the ones named in this story unless `spec.json` is updated first."
       ],
       "expected_files": [
+        "src/collections/Media.ts",
+        "src/globals/SiteSettings.ts",
         "src/globals/Homepage.ts"
       ],
       "depends_on": [
-        "product.cms-content-model-part-2"
+        "product.cms-content-model"
       ],
       "validation": {
         "commands": [
@@ -749,14 +725,18 @@
     },
     {
       "id": "ST-008",
-      "title": "Implement role-based access control (part 1 of 2)",
       "story_key": "feature.roles",
+      "title": "Implement role-based access control",
       "description": "Define roles (admin, editor, reviewer), permissions, and enforce authorization boundaries.",
       "acceptance_criteria": [
         "Role model is defined with the following roles: admin, editor, reviewer",
         "`editor` can create and update drafts but cannot publish, manage users, or change system configuration",
         "`reviewer` can review submissions and publish approved content but cannot manage users or global system configuration",
-        "`admin` can manage users, configuration, and override editorial publish/archive actions"
+        "`admin` can manage users, configuration, and override editorial publish/archive actions",
+        "Protected endpoints and admin collection/global access rules enforce the role matrix consistently",
+        "Unauthorized role access returns 403",
+        "Database migration is generated and executed for all schema changes (run `npm run db:migrate:create` then `npm run db:migrate`)",
+        "Payload access control functions explicitly gate editorial collections/globals by admin/editor/reviewer responsibilities"
       ],
       "scope_boundaries": [
         "Do NOT implement granular per-field permissions unless required by spec",
@@ -764,7 +744,8 @@
         "All migrations MUST be created in `src/lib/migrations/` using `npm run db:migrate:create` — do NOT create migration files in any other directory (e.g. `src/models/migrations/`)"
       ],
       "expected_files": [
-        "src/lib/permissions.ts"
+        "src/lib/permissions.ts",
+        "src/collections/Users.ts (updated with roles field)"
       ],
       "depends_on": [
         "feature.authentication"
@@ -778,76 +759,16 @@
       }
     },
     {
-      "id": "ST-008b",
-      "title": "Implement role-based access control (part 2 of 2)",
-      "story_key": "feature.roles-part-2",
-      "description": "Define roles (admin, editor, reviewer), permissions, and enforce authorization boundaries.",
-      "acceptance_criteria": [
-        "Protected endpoints and admin collection/global access rules enforce the role matrix consistently",
-        "Unauthorized role access returns 403",
-        "Database migration is generated and executed for all schema changes (run `npm run db:migrate:create` then `npm run db:migrate`)",
-        "Payload access control functions explicitly gate editorial collections/globals by admin/editor/reviewer responsibilities"
-      ],
-      "scope_boundaries": [
-        "Do NOT implement granular per-field permissions unless required by spec",
-        "Do NOT implement a permissions admin UI — enforce in backend only",
-        "All migrations MUST be created in `src/lib/migrations/` using `npm run db:migrate:create` — do NOT create migration files in any other directory (e.g. `src/models/migrations/`)"
-      ],
-      "expected_files": [
-        "src/collections/Users.ts (updated with roles field)"
-      ],
-      "depends_on": [
-        "feature.roles"
-      ],
-      "validation": {
-        "commands": [
-          "npm run build",
-          "npm test"
-        ],
-        "manual_check": "Editor can edit drafts but gets 403 on publish-only actions; reviewer can approve/publish; admin can manage users."
-      }
-    },
-    {
       "id": "ST-009",
-      "title": "Implement media library (part 1 of 2)",
       "story_key": "feature.media-library",
+      "title": "Implement media library",
       "description": "Allow uploading, listing, and managing media assets.",
       "acceptance_criteria": [
         "Users can upload images and files",
         "Uploaded media is stored and retrievable via URL",
         "Media list view shows uploaded assets with thumbnails",
         "File size and type validation is enforced on upload",
-        "Database migration is generated and executed for all schema changes (run `npm run db:migrate:create` then `npm run db:migrate`)"
-      ],
-      "scope_boundaries": [
-        "Do NOT redefine the CMS schema here — extend the existing `media` collection from the CMS content model story with upload/storage behavior only",
-        "Do NOT implement image optimization or CDN delivery in this story",
-        "Do NOT implement media usage tracking across content",
-        "All migrations MUST be created in `src/lib/migrations/` using `npm run db:migrate:create` — do NOT create migration files in any other directory (e.g. `src/models/migrations/`)",
-        "Do NOT configure S3 or external object storage — use Payload's local disk adapter for now"
-      ],
-      "expected_files": [
-        "src/collections/Media.ts",
-        "src/payload.config.ts (updated with upload and storage settings)"
-      ],
-      "depends_on": [
-        "feature.authentication",
-        "product.cms-content-model"
-      ],
-      "validation": {
-        "commands": [
-          "npm run build",
-          "npm test"
-        ],
-        "manual_check": "Can upload an image or document, retrieve its URL, and see validation reject disallowed file types."
-      }
-    },
-    {
-      "id": "ST-009b",
-      "title": "Implement media library (part 2 of 2)",
-      "story_key": "feature.media-library-part-2",
-      "description": "Allow uploading, listing, and managing media assets.",
-      "acceptance_criteria": [
+        "Database migration is generated and executed for all schema changes (run `npm run db:migrate:create` then `npm run db:migrate`)",
         "Upload validation explicitly supports the media kinds required by the spec: image, document",
         "Payload Media collection uses the local filesystem upload adapter (store uploads in a `media/` directory at the project root)",
         "The local filesystem path is treated as an adapter boundary so object storage can be introduced later without changing callers",
@@ -861,10 +782,13 @@
         "Do NOT configure S3 or external object storage — use Payload's local disk adapter for now"
       ],
       "expected_files": [
+        "src/collections/Media.ts",
+        "src/payload.config.ts (updated with upload and storage settings)",
         ".env.example (updated with storage configuration)"
       ],
       "depends_on": [
-        "feature.media-library"
+        "feature.authentication",
+        "product.cms-content-model"
       ],
       "validation": {
         "commands": [

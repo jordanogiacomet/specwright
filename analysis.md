@@ -1,7 +1,7 @@
 # Specwright — Full Repository Analysis
 
 **Date**: 2026-03-18 (updated 2026-03-20)
-**Test suite**: 402/402 passed
+**Test suite**: 426/426 passed
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow), `output/editorial-control-center` (Payload editorial)
 
 ### Handoff For Future Agents
@@ -73,6 +73,76 @@ When the main agent makes code changes, record the new state here before moving 
 | TESTS-003 | ADDED | 24 new tests for `discovery_merge.py` (was 3 tests for 1023 lines) |
 | TESTS-004 | ADDED | 7 new tests for `openclaw_bundle.py` internals (OPENCLAW.md, repo-contract, manifest, edge cases) |
 | TESTS-005 | ADDED | 5 new tests for codex_bundle + scaffold_engine (CODEX_EFFORT, PAYLOAD_SECRET, security, TypeScript, JWT_SECRET) |
+| SEC-005 | ADDED | ST-902 (rate limiting) auto-generated when authentication feature is present — closes gap between AGENTS.md guidance and story ACs |
+| SEC-006 | ADDED | ST-903 (password policy) auto-generated when authentication feature is present — enforces minLength:8 at story level |
+| SPLIT-001 | ADDED | Story-splitting heuristic: stories with >9 ACs or >8 expected files are auto-split into balanced parts with chained dependencies |
+| TESTS-006 | ADDED | 24 new tests for ST-902, ST-903, and story-splitting heuristic (refine_engine) |
+
+---
+
+## Session 15 — Security Stories + Story-Splitting Heuristic (Completed, 2026-03-20)
+
+### What was done
+
+1. **Added ST-902 (rate limiting) story (SEC-005)**
+   - `initializer/ai/refine_engine.py` — new `_build_rate_limiting_story(spec)`
+   - Guard: only generated when `"authentication"` is in `spec["features"]`
+   - story_key: `security.rate-limiting`, depends_on: `["feature.authentication"]`
+   - Stack-aware: Payload-specific endpoints (`/api/users/login`, `/api/users/create`), Next.js middleware
+   - ACs: 429 on threshold breach, sliding window/token bucket, rate limit headers
+
+2. **Added ST-903 (password policy) story (SEC-006)**
+   - `initializer/ai/refine_engine.py` — new `_build_password_policy_story(spec)`
+   - Guard: only generated when `"authentication"` is in `spec["features"]`
+   - story_key: `security.password-policy`, depends_on: `["feature.authentication"]`
+   - ACs: server rejects <8 char passwords with 400, client validates before submit, shared validation utility
+
+3. **Added story-splitting heuristic (SPLIT-001)**
+   - `initializer/ai/refine_engine.py` — new `_split_complex_stories(spec)` and `_split_story(story)`
+   - Thresholds: `MAX_AC_COUNT=9`, `MAX_EXPECTED_FILES=8`, `MIN_AC_PER_PART=4`
+   - Part 1 keeps original `id` and `story_key` (preserves downstream dependency resolution)
+   - Parts 2+ get suffixed IDs (`{id}b`, `{id}c`) and chained `depends_on`
+   - Called from `refine_spec()` after `refine_stories()`
+
+4. **Tuned splitting thresholds**
+   - Initial threshold (MAX_AC=7) over-split ST-008 (RBAC, 8 ACs) and ST-009 (media, 9 ACs)
+   - Raised to MAX_AC=9 and added MIN_AC_PER_PART=4 floor
+   - Result: ST-008 and ST-009 no longer split; ST-001 reduced from 3 parts to 2; ST-012 (the 178-min story) still splits
+
+5. **Added 24 new tests (TESTS-006)**
+   - 7 for ST-902 (guard, story_key, depends_on, Payload-specific, Next.js-specific, deduplication)
+   - 6 for ST-903 (guard, story_key, depends_on, minLength criteria, deduplication)
+   - 9 for splitting (threshold, triggers, part1 key preservation, chaining, scope, titles, high-files-low-ACs skip)
+   - 2 for full pipeline (security stories, splitting)
+
+### Files changed
+
+- `initializer/ai/refine_engine.py` — ST-902, ST-903 builders, `_split_complex_stories()`, `_split_story()`, updated `refine_stories()` and `refine_spec()`
+- `tests/unit/test_refine_engine.py` — 24 new tests
+
+### Validation performed
+
+1. **Full test suite**: `426 passed in 7.82s` (was 402)
+2. **Full regeneration**: `initializer new + prepare` produces 19 stories (14 original + 2 security + 3 from splitting)
+3. **Execution plan verified**: ST-902/ST-903 appear after ST-007 (auth); split parts chain correctly
+4. **Generated project gates**: `npm install` OK, `npm test` 3/3 passed, `npm run lint` 0 errors, `npm run build` compiled successfully
+5. **Splitting tuning verified**: ST-008 (8 ACs) and ST-009 (9 ACs) no longer over-split
+
+### Splitting results on editorial project
+
+| Story | Pre-split ACs | Split? | Parts | Rationale |
+|-------|---:|---|---:|---|
+| ST-001 (CMS content model) | 18 | Yes | 2 | 18 ACs — justified |
+| ST-003 (Init repo) | 10 | Yes | 2 | 10 ACs, 9 files — justified |
+| ST-008 (RBAC) | 8 | No | 1 | Below threshold (≤9) |
+| ST-009 (Media library) | 9 | No | 1 | At threshold (≤9) |
+| ST-012 (Public site) | 10 | Yes | 2 | The 178-min story — justified |
+
+### Remaining work for next session
+
+1. **Live ralph loop re-run** — Regenerated project has 19 stories with splitting + security stories; run the loop to validate split stories and ST-902/ST-903 produce correct code via Codex
+2. **Push to remote** — HTTPS auth not configured; needs `gh auth login` or SSH remote
+3. **SaaS roadmap** — API layer extraction, multi-tenancy (deferred to later phase)
 
 ---
 
@@ -1611,18 +1681,18 @@ Remaining without dedicated tests:
 
 10. Updated this `analysis.md` with the fixes, validations, and handoff notes.
 
-### Current working tree (updated after Session 14)
+### Current working tree (updated after Session 15)
 
 Current repo state:
 
 ```text
 Branch: master
-HEAD: 3e78b93 (includes Session 14 hardening commit)
-Test suite: 402/402 passed
-git status: clean (except analysis.md update)
+HEAD: 3e78b93 + uncommitted Session 15 changes
+Test suite: 426/426 passed
+Uncommitted files: initializer/ai/refine_engine.py, tests/unit/test_refine_engine.py, analysis.md
 ```
 
-All Session 14 changes are committed. fix/ralph-evidence merged into master.
+Session 15 changes are ready to commit: ST-902/ST-903 security stories, story-splitting heuristic, 24 new tests, analysis.md update.
 
 ### Most relevant validations already run
 
