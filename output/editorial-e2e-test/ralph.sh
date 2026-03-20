@@ -17,6 +17,7 @@ MIGRATION_CMD="npm run db:migrate"
 MIGRATION_CREATE="npm run db:migrate:create"
 MIGRATION_STATUS="npm run db:migrate:status"
 CODEX_MODEL="${CODEX_MODEL:-gpt-5.4}"
+CODEX_EFFORT="${CODEX_EFFORT:-medium}"
 
 DRY_RUN=false
 START_FROM=""
@@ -277,7 +278,7 @@ PROMPT_EOF
     # Run Codex via installed CLI
     codex exec \
         --model "$CODEX_MODEL" \
-        --config 'model_reasoning_effort="xhigh"' \
+        --config "model_reasoning_effort=\"$CODEX_EFFORT\"" \
         --sandbox danger-full-access \
         --json \
         --output-last-message "$output_file" \
@@ -369,7 +370,7 @@ PROMPT_EOF
     # Run Codex via installed CLI
     codex exec \
         --model "$CODEX_MODEL" \
-        --config 'model_reasoning_effort="xhigh"' \
+        --config "model_reasoning_effort=\"$CODEX_EFFORT\"" \
         --sandbox danger-full-access \
         --json \
         --output-last-message "$output_file" \

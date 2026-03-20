@@ -129,7 +129,8 @@ def test_codex_bundle_ralph_sh_contains_correct_model(tmp_path):
 
     content = (tmp_path / "ralph.sh").read_text()
     assert "gpt-5.4" in content
-    assert 'model_reasoning_effort="xhigh"' in content
+    assert 'model_reasoning_effort' in content
+    assert "$CODEX_EFFORT" in content
     assert "danger-full-access" in content
 
 
@@ -401,6 +402,98 @@ def test_openclaw_commands_json_go_stack(tmp_path):
 
 
 # -------------------------------------------------------
+# OpenClaw bundle — OPENCLAW.md content
+# -------------------------------------------------------
+
+
+def test_openclaw_md_contains_project_name(tmp_path):
+    spec = _make_spec()
+    write_openclaw_bundle(tmp_path, spec)
+
+    content = (tmp_path / ".openclaw" / "OPENCLAW.md").read_text()
+    assert "Test Project" in content
+    assert "execution package" in content.lower()
+    assert "spec.json" in content
+
+
+def test_openclaw_md_contains_execution_model(tmp_path):
+    spec = _make_spec()
+    write_openclaw_bundle(tmp_path, spec)
+
+    content = (tmp_path / ".openclaw" / "OPENCLAW.md").read_text()
+    assert "execution-plan.json" in content
+    assert "docs/stories/" in content
+    assert "progress.txt" in content
+
+
+# -------------------------------------------------------
+# OpenClaw bundle — repo-contract.json
+# -------------------------------------------------------
+
+
+def test_openclaw_repo_contract_has_expected_paths(tmp_path):
+    spec = _make_spec()
+    write_openclaw_bundle(tmp_path, spec)
+
+    contract = json.loads((tmp_path / ".openclaw" / "repo-contract.json").read_text())
+
+    assert contract["contract"]["kind"] == "generated-project"
+    assert contract["contract"]["primary_spec"] == "spec.json"
+    assert contract["contract"]["stories_dir"] == "docs/stories"
+    assert contract["execution_expectations"]["story_driven"] is True
+    assert contract["execution_expectations"]["follow_phase_order"] is True
+
+
+# -------------------------------------------------------
+# OpenClaw bundle — manifest.json details
+# -------------------------------------------------------
+
+
+def test_openclaw_manifest_has_source_of_truth_list(tmp_path):
+    spec = _make_spec()
+    write_openclaw_bundle(tmp_path, spec)
+
+    manifest = json.loads((tmp_path / ".openclaw" / "manifest.json").read_text())
+
+    assert "spec.json" in manifest["source_of_truth"]
+    assert "PRD.md" in manifest["source_of_truth"]
+    assert ".openclaw/execution-plan.json" in manifest["source_of_truth"]
+    assert manifest["execution_mode"] == "story-by-story"
+
+
+def test_openclaw_manifest_policies_all_true(tmp_path):
+    spec = _make_spec()
+    write_openclaw_bundle(tmp_path, spec)
+
+    manifest = json.loads((tmp_path / ".openclaw" / "manifest.json").read_text())
+
+    for key, value in manifest["policies"].items():
+        assert value is True, f"Policy {key} should be True"
+
+
+# -------------------------------------------------------
+# OpenClaw bundle — edge cases
+# -------------------------------------------------------
+
+
+def test_openclaw_bundle_empty_stories(tmp_path):
+    spec = _make_spec(stories=[])
+    write_openclaw_bundle(tmp_path, spec)
+
+    plan = json.loads((tmp_path / ".openclaw" / "execution-plan.json").read_text())
+    assert plan["stories"] == []
+    assert plan["total_stories"] == 0
+
+
+def test_openclaw_bundle_empty_capabilities(tmp_path):
+    spec = _make_spec(capabilities=[])
+    write_openclaw_bundle(tmp_path, spec)
+
+    manifest = json.loads((tmp_path / ".openclaw" / "manifest.json").read_text())
+    assert manifest["capabilities"] == []
+
+
+# -------------------------------------------------------
 # Codex bundle — migration commands (BUG-003 fix)
 # -------------------------------------------------------
 
@@ -450,6 +543,16 @@ def test_codex_ralph_sh_has_configurable_model(tmp_path):
     content = (tmp_path / "ralph.sh").read_text()
     assert "CODEX_MODEL" in content
     assert "${CODEX_MODEL:-gpt-5.4}" in content
+
+
+def test_codex_ralph_sh_has_configurable_effort(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert "CODEX_EFFORT" in content
+    assert '${CODEX_EFFORT:-medium}' in content
+    assert 'model_reasoning_effort="xhigh"' not in content
 
 
 def test_codex_ralph_sh_exits_nonzero_on_failure(tmp_path):
@@ -569,3 +672,24 @@ def test_codex_agents_md_enforces_env_var_names(tmp_path):
     content = (tmp_path / ".codex" / "AGENTS.md").read_text()
     assert ".env.example" in content
     assert "do NOT rename" in content.lower() or "do not rename" in content.lower()
+
+
+def test_codex_agents_md_has_security_requirements(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / ".codex" / "AGENTS.md").read_text()
+    assert "Security requirements" in content
+    assert "rate limiting" in content.lower()
+    assert "minLength: 8" in content
+    assert "NEVER hardcode secrets" in content
+
+
+def test_codex_agents_md_has_typescript_conventions(tmp_path):
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / ".codex" / "AGENTS.md").read_text()
+    assert "TypeScript conventions" in content
+    assert ".js" in content
+    assert "do NOT create" in content

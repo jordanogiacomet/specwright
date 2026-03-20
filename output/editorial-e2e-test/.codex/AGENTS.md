@@ -109,6 +109,20 @@ Create files in these locations. Do NOT invent a different directory structure.
 
 Implement entities, states, and permissions as described above.
 
+## Security requirements
+
+- Use `process.env.PAYLOAD_SECRET` (or `JWT_SECRET`) — NEVER hardcode secrets or use fallback values
+- Password fields MUST enforce `minLength: 8` on both client and server
+- Auth endpoints (`/api/users/login`, `/api/users/create`, `/api/auth/login`, `/api/auth/register`) MUST have rate limiting (e.g. `express-rate-limit` or Next.js middleware)
+- All env vars defined in `.env.example` that are referenced in code MUST be imported and used — do not define unused variables
+- NEVER commit `.env.local` or any file containing real secrets
+
+## TypeScript conventions
+
+- Use TypeScript (`.ts`/`.tsx`) exclusively — do NOT create `.js`/`.jsx` files alongside `.ts` files
+- If a module exists as `.ts`, NEVER create a `.js` re-export or duplicate
+- Import Payload collections using `.ts` extension when `allowImportingTsExtensions` is enabled
+
 ## Database migrations — CRITICAL
 
 **Every time you modify a collection, model, or database schema, you MUST generate and run a migration.**

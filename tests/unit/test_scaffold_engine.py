@@ -250,6 +250,14 @@ def test_payload_config_references_database_uri(tmp_path):
     assert 'migrationDir: path.resolve(dirname, "lib/migrations")' in content
 
 
+def test_payload_config_rejects_missing_secret(tmp_path):
+    write_scaffold(tmp_path, _payload_spec())
+
+    content = (tmp_path / "src/payload.config.ts").read_text()
+    assert "PLEASE-CHANGE-ME" not in content
+    assert 'throw new Error("PAYLOAD_SECRET env var is required")' in content
+
+
 def test_payload_config_imports_users_with_runtime_safe_extension(tmp_path):
     write_scaffold(tmp_path, _payload_spec())
 
@@ -565,6 +573,13 @@ def test_env_example_payload_has_payload_secret(tmp_path):
 
     content = (tmp_path / ".env.example").read_text()
     assert "PAYLOAD_SECRET" in content
+
+
+def test_env_example_payload_omits_jwt_secret(tmp_path):
+    write_scaffold(tmp_path, _payload_spec())
+
+    content = (tmp_path / ".env.example").read_text()
+    assert "JWT_SECRET" not in content
 
 
 # -------------------------------------------------------

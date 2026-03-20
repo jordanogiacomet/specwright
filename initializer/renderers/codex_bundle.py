@@ -197,6 +197,20 @@ The ralph.sh script will tell you which story to implement.
 - Do NOT create files in `src/pages/` — this project uses the App Router (`src/app/`) exclusively
 - Use environment variable names exactly as defined in `.env.example` — do NOT rename or invent alternatives (e.g. use `NEXT_PUBLIC_API_URL` not `NEXT_PUBLIC_API_BASE_URL`)
 {structure_section}{domain_section}
+## Security requirements
+
+- Use `process.env.PAYLOAD_SECRET` (or `JWT_SECRET`) — NEVER hardcode secrets or use fallback values
+- Password fields MUST enforce `minLength: 8` on both client and server
+- Auth endpoints (`/api/users/login`, `/api/users/create`, `/api/auth/login`, `/api/auth/register`) MUST have rate limiting (e.g. `express-rate-limit` or Next.js middleware)
+- All env vars defined in `.env.example` that are referenced in code MUST be imported and used — do not define unused variables
+- NEVER commit `.env.local` or any file containing real secrets
+
+## TypeScript conventions
+
+- Use TypeScript (`.ts`/`.tsx`) exclusively — do NOT create `.js`/`.jsx` files alongside `.ts` files
+- If a module exists as `.ts`, NEVER create a `.js` re-export or duplicate
+- Import Payload collections using `.ts` extension when `allowImportingTsExtensions` is enabled
+
 ## Database migrations — CRITICAL
 
 **Every time you modify a collection, model, or database schema, you MUST generate and run a migration.**
@@ -270,6 +284,7 @@ MIGRATION_CMD="{migration_cmd}"
 MIGRATION_CREATE="{migration_create}"
 MIGRATION_STATUS="{migration_status}"
 CODEX_MODEL="${{CODEX_MODEL:-gpt-5.4}}"
+CODEX_EFFORT="${{CODEX_EFFORT:-medium}}"
 
 DRY_RUN=false
 START_FROM=""
@@ -532,7 +547,7 @@ PROMPT_EOF
     # Run Codex via installed CLI
     codex exec \\
         --model "$CODEX_MODEL" \\
-        --config 'model_reasoning_effort="xhigh"' \\
+        --config "model_reasoning_effort=\\"$CODEX_EFFORT\\"" \\
         --sandbox danger-full-access \\
         --json \\
         --output-last-message "$output_file" \\
@@ -624,7 +639,7 @@ PROMPT_EOF
     # Run Codex via installed CLI
     codex exec \\
         --model "$CODEX_MODEL" \\
-        --config 'model_reasoning_effort="xhigh"' \\
+        --config "model_reasoning_effort=\\"$CODEX_EFFORT\\"" \\
         --sandbox danger-full-access \\
         --json \\
         --output-last-message "$output_file" \\

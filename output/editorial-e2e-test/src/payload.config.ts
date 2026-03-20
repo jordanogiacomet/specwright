@@ -15,7 +15,11 @@ export default buildConfig({
   },
   collections: [Users],
   editor: lexicalEditor(),
-  secret: process.env.PAYLOAD_SECRET || "PLEASE-CHANGE-ME",
+  secret: (() => {
+    const s = process.env.PAYLOAD_SECRET;
+    if (!s) throw new Error("PAYLOAD_SECRET env var is required");
+    return s;
+  })(),
   typescript: {
     outputFile: path.resolve(dirname, "payload-types.ts"),
   },

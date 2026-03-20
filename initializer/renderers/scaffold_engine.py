@@ -160,9 +160,10 @@ def _env_example(spec: dict[str, Any]) -> str:
     lines.append("NODE_ENV=development")
     lines.append("")
 
-    lines.append("# Auth")
-    lines.append("JWT_SECRET=change-me-to-a-random-secret")
-    lines.append("")
+    if not is_payload:
+        lines.append("# Auth")
+        lines.append("JWT_SECRET=change-me-to-a-random-secret")
+        lines.append("")
 
     return "\n".join(lines)
 
@@ -404,7 +405,11 @@ export default buildConfig({{
   }},
   collections: [Users],
   editor: lexicalEditor(),
-  secret: process.env.PAYLOAD_SECRET || "PLEASE-CHANGE-ME",
+  secret: (() => {{
+    const s = process.env.PAYLOAD_SECRET;
+    if (!s) throw new Error("PAYLOAD_SECRET env var is required");
+    return s;
+  }})(),
   typescript: {{
     outputFile: path.resolve(dirname, "payload-types.ts"),
   }},
