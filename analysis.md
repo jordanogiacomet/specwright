@@ -1,7 +1,7 @@
 # Specwright — Full Repository Analysis
 
-**Date**: 2026-03-18 (updated 2026-03-21, Session 28)
-**Test suite**: 471/471 passed
+**Date**: 2026-03-18 (updated 2026-03-21, Session 30)
+**Test suite**: 475/475 passed
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow), `output/editorial-control-center` (Payload editorial)
 
 ### Handoff For Future Agents
@@ -113,6 +113,9 @@ When the main agent makes code changes, record the new state here before moving 
 | BUG-037 | **FIXED** | Typecheck validation fails with `.next/types/**/*.ts` not found when `.next` directory is stale/missing. `tsconfig.json` includes `.next/types/**/*.ts` but these files only exist after `next build`. Affected FE-ST-007 (3x fail). **Fix**: `rm -f tsconfig.tsbuildinfo` before every typecheck invocation in codex_bundle.py (all 3 call sites). Stale tsbuildinfo was referencing .next/types/ entries from a prior build structure. |
 | BUG-038 | **FIXED** | Duplicate `/` route: bootstrap.frontend creates `src/app/(app)/page.tsx` and FE-ST-013 creates `src/app/(public)/page.tsx` — both resolve to `/`. Next.js rejects build. **Fix**: Added `src/app/(app)/page.tsx` to owned_files of `product.public-site-rendering` in story_engine.py so FE-ST-013 can relocate/delete it. |
 | TESTS-013 | ADDED | 2 new tests for BUG-037/038 (473 total, was 471) |
+| OPT-006 | ADDED | `ensure_node_modules()` in ralph.sh — auto-runs `npm ci` (lockfile) or `npm install` when `node_modules/` is missing |
+| OPT-007 | ADDED | `git_init_scaffold()` resume mode — commits scaffold updates from `prepare` regeneration before slice execution, enabling DONE-slice reuse across runs |
+| TESTS-014 | ADDED | 2 new tests for OPT-006/007 (475 total, was 473) |
 
 ---
 
@@ -210,10 +213,37 @@ Two new bugs identified (BUG-037 typecheck race, BUG-038 duplicate route) affect
 
 **Session 29 update**: BUG-037 and BUG-038 both FIXED. 473/473 tests pass.
 
+**Session 30 update**: OPT-006 (auto npm install) and OPT-007 (resume mode) added. 475/475 tests pass.
+
 ### Next priorities
 
-1. **Run 9**: Full E2E run to validate that FE-ST-013 and FE-ST-007 now pass with the BUG-037/038 fixes.
+1. **Run 9 (resume mode)**: Use `initializer prepare` on Run 8 output + `./ralph.sh` to re-execute only failed slices (FE-ST-007, FE-ST-013, FE-ST-011, FE-ST-003b, BE-ST-005).
 2. If Run 9 surfaces new bugs, document and assess before fixing.
+
+---
+
+## Session 30 — OPT-006/007: npm cache + resume mode (2026-03-21)
+
+### What happened
+
+1. **OPT-006 — Auto npm install**: Added `ensure_node_modules()` function to generated `ralph.sh`. When `node_modules/` doesn't exist, it auto-runs `npm ci` (if `package-lock.json` present) or `npm install`. Called once at startup, after `git_init_scaffold`. Eliminates manual `npm install` step between runs.
+
+2. **OPT-007 — Resume mode via scaffold re-commit**: Extended `git_init_scaffold()` to detect uncommitted changes when `.git/` already exists (from a prior run). If scaffold files changed (via `prepare` regeneration), commits them as "scaffold update" before slice execution. Combined with the existing `track_unit_done()` skip logic, this enables full resume:
+
+   ```
+   # Fix a bug in the generator, then:
+   initializer prepare output/editorial-e2e-test
+   cd output/editorial-e2e-test
+   ./ralph.sh   # skips DONE slices, re-executes failed ones
+   ```
+
+3. **Tests**: Added 2 new tests (475 total):
+   - `test_codex_ralph_sh_ensures_node_modules` — verifies `ensure_node_modules`, `npm ci`, `npm install` in generated ralph.sh
+   - `test_codex_ralph_sh_recommits_scaffold_on_existing_git` — verifies `"scaffold update"`, `git diff --quiet HEAD`, `git ls-files --others` in generated ralph.sh
+
+### Test results
+
+475/475 passed.
 
 ---
 

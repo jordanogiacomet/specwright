@@ -553,10 +553,30 @@ enforce_owned_files() {{
 
 git_init_scaffold() {{
     if [[ -d "$SCRIPT_DIR/.git" ]]; then
+        # Re-commit any scaffold changes from prepare regeneration (resume mode)
+        if (cd "$SCRIPT_DIR" && ! git diff --quiet HEAD 2>/dev/null) || \
+           (cd "$SCRIPT_DIR" && ! git diff --cached --quiet HEAD 2>/dev/null) || \
+           [[ -n "$(cd "$SCRIPT_DIR" && git ls-files --others --exclude-standard)" ]]; then
+            echo "Committing scaffold updates..."
+            (cd "$SCRIPT_DIR" && git add -A && git commit -q -m "scaffold update")
+        fi
         return 0
     fi
     echo "Initializing git repo for owned-files tracking..."
     (cd "$SCRIPT_DIR" && git init -q && git add -A && git commit -q -m "scaffold" --allow-empty)
+}}
+
+ensure_node_modules() {{
+    if [[ -d "$SCRIPT_DIR/node_modules" ]]; then
+        return 0
+    fi
+    echo "node_modules not found — installing dependencies..."
+    if [[ -f "$SCRIPT_DIR/package-lock.json" ]]; then
+        (cd "$SCRIPT_DIR" && npm ci)
+    else
+        (cd "$SCRIPT_DIR" && npm install)
+    fi
+    echo "Dependencies installed."
 }}
 
 lint_config_exists() {{
@@ -1162,6 +1182,7 @@ run_track_plan() {{
 
 TOTAL=$(jq '.total_stories' "$PLAN_FILE")
 git_init_scaffold
+ensure_node_modules
 echo ""
 echo "=== Ralph Loop: {project_name} ==="
 echo "Stories: $TOTAL"

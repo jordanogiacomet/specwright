@@ -1266,3 +1266,26 @@ def test_codex_ralph_sh_auto_skip_empty_owned_files(tmp_path):
     # run_track_plan should check owned_files length and skip when 0
     assert 'owned_count=$(jq -r ".stories[$i].owned_files | length"' in content
     assert "no owned files — auto-skip" in content
+
+
+def test_codex_ralph_sh_ensures_node_modules(tmp_path):
+    """OPT: ralph.sh auto-installs deps if node_modules is missing."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert "ensure_node_modules" in content
+    assert "node_modules" in content
+    assert "npm ci" in content
+    assert "npm install" in content
+
+
+def test_codex_ralph_sh_recommits_scaffold_on_existing_git(tmp_path):
+    """OPT: git_init_scaffold commits scaffold updates when .git already exists."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert '"scaffold update"' in content
+    assert "git diff --quiet HEAD" in content
+    assert "git ls-files --others --exclude-standard" in content
