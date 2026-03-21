@@ -716,3 +716,33 @@ def test_sqlite_has_no_migration_template(tmp_path):
     write_scaffold(tmp_path, spec)
 
     assert not (tmp_path / "src/lib/migration-template.cjs").exists()
+
+
+# -------------------------------------------------------
+# BUG-030: Payload projects must NOT get src/app/page.tsx
+# -------------------------------------------------------
+
+
+def test_scaffold_payload_skips_root_page(tmp_path):
+    """Payload uses route groups (app)/(payload) — root page.tsx conflicts."""
+    spec = _make_spec(stack={
+        "frontend": "nextjs",
+        "backend": "payload",
+        "database": "postgres",
+    })
+    write_scaffold(tmp_path, spec)
+
+    # Root page must NOT exist for Payload — FE-ST-006 creates (app)/page.tsx
+    assert not (tmp_path / "src/app/page.tsx").exists()
+    # But layout and globals should still exist
+    assert (tmp_path / "src/app/layout.tsx").exists()
+    assert (tmp_path / "src/app/globals.css").exists()
+    # Payload admin pages should exist
+    assert (tmp_path / "src/app/(payload)/admin/[[...segments]]/page.tsx").exists()
+
+
+def test_scaffold_node_api_still_has_root_page(tmp_path):
+    """Non-Payload projects should still get the root page placeholder."""
+    write_scaffold(tmp_path, _make_spec())
+
+    assert (tmp_path / "src/app/page.tsx").exists()

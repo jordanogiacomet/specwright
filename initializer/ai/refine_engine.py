@@ -105,6 +105,7 @@ def _build_monitoring_story(spec):
         "Do NOT integrate external monitoring services (Datadog, Sentry, etc.) — use structured logs only",
         "Do NOT implement custom dashboards — logs should be queryable via standard tools",
         "Do NOT add performance profiling — focus on operational visibility",
+        "Do NOT run or test commands that require docker, curl to external services, or other tools not available in the sandbox — validate with unit tests and bash -n only",
     ]
 
     return {
@@ -166,6 +167,7 @@ def _build_backups_story(spec):
         "Do NOT implement cloud-specific backup solutions (RDS snapshots, etc.) — use portable scripts",
         "Do NOT implement real-time replication — periodic backups are sufficient for MVP",
         "Do NOT implement backup monitoring or alerting — that can be added later",
+        "Do NOT run or test commands that require pg_dump, docker, or other external CLI tools not available in the sandbox — use bash -n for syntax checks only",
     ]
 
     return {

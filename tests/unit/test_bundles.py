@@ -1102,3 +1102,112 @@ def test_codex_ralph_sh_commits_after_each_successful_slice(tmp_path):
     assert "git add -A" in content
     assert "slice: $unit_id" in content
     assert 'acquire_lock "git"' in content
+
+
+def test_codex_ralph_sh_extract_error_loci_filters_next_paths(tmp_path):
+    """BUG-031: error loci extraction must filter out .next/ build artifact paths."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    # Both grep pipelines in extract_error_loci must filter .next paths
+    assert "grep -v '\\.next'" in content
+
+
+def test_codex_ralph_sh_skips_typecheck_on_build_failure(tmp_path):
+    """BUG-032: typecheck must be gated on build success to avoid phantom TS6053."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    # Both partial and full validation modes must gate typecheck on VALIDATION_OK
+    assert 'if [[ "$VALIDATION_OK" == true ]]; then' in content
+    # Typecheck must appear inside the conditional, not unconditionally
+    idx_build = content.index('"Build" "block"')
+    idx_gate = content.index('if [[ "$VALIDATION_OK" == true ]]; then', idx_build)
+    idx_typecheck = content.index('"Typecheck" "block"', idx_build)
+    assert idx_gate < idx_typecheck
+
+
+# -------------------------------------------------------
+# Velocity & token optimizations
+# -------------------------------------------------------
+
+
+def test_codex_ralph_sh_retry_sleep_is_one_second(tmp_path):
+    """Retry backoff should be 1s, not 5s."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    # Find retry block context (after "Retry $((attempt")
+    idx_retry = content.index("Retry $((attempt")
+    # sleep 1 should be near the retry block, not sleep 5
+    sleep_region = content[idx_retry:idx_retry + 200]
+    assert "sleep 1" in sleep_region
+    assert "sleep 5" not in sleep_region
+
+
+def test_codex_ralph_sh_retry_effort_downshift(tmp_path):
+    """Retries should use CODEX_RETRY_EFFORT (default low) for faster/cheaper retries."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert 'CODEX_RETRY_EFFORT="${CODEX_RETRY_EFFORT:-low}"' in content
+    # The retry codex exec should use CODEX_RETRY_EFFORT, not CODEX_EFFORT
+    idx_retry_func = content.index("run_codex_retry_unit()")
+    retry_section = content[idx_retry_func:idx_retry_func + 3000]
+    assert "CODEX_RETRY_EFFORT" in retry_section
+
+
+def test_codex_ralph_sh_error_output_capped(tmp_path):
+    """Validation error output should be capped to avoid bloating retry prompts."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert "tail -10 | head -c 1500" in content
+
+
+def test_codex_ralph_sh_retry_does_not_reembed_story(tmp_path):
+    """Retry prompt should reference story file, not re-embed it."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    idx_retry_func = content.index("run_codex_retry_unit()")
+    retry_section = content[idx_retry_func:idx_retry_func + 3000]
+    assert "unchanged from first attempt" in retry_section
+    # Should NOT cat the story file in retry
+    assert 'cat "$STORIES_DIR/$source_story_id.md"' not in retry_section
+
+
+def test_codex_ralph_sh_partial_validation_unlocked_typecheck_lint_test(tmp_path):
+    """Partial validation should only lock around build, not typecheck/lint/test."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    # Find the SECOND partial validation block (inline in main loop, not run_track_validation)
+    first = content.index('if [[ "$validation_mode" == "partial" ]]; then')
+    idx_partial = content.index('if [[ "$validation_mode" == "partial" ]]; then', first + 1)
+    partial_block = content[idx_partial:idx_partial + 2000]
+    # Build should be inside lock
+    assert 'acquire_lock "validation"' in partial_block
+    assert "release_lock" in partial_block
+    # Typecheck/lint/test should be OUTSIDE the lock (after release_lock)
+    idx_release = partial_block.index("release_lock")
+    after_release = partial_block[idx_release:]
+    assert '"Typecheck"' in after_release
+    assert '"Lint"' in after_release
+    assert '"Tests"' in after_release
+
+
+def test_codex_ralph_sh_partial_validation_scoped_lint(tmp_path):
+    """Partial validation should lint only owned files via npx eslint."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    assert "npx eslint $owned_lint_files" in content

@@ -291,6 +291,7 @@ MIGRATION_CREATE="{migration_create}"
 MIGRATION_STATUS="{migration_status}"
 CODEX_MODEL="${{CODEX_MODEL:-gpt-5.4}}"
 CODEX_EFFORT="${{CODEX_EFFORT:-medium}}"
+CODEX_RETRY_EFFORT="${{CODEX_RETRY_EFFORT:-low}}"
 
 DRY_RUN=false
 START_FROM=""
@@ -382,10 +383,10 @@ extract_error_loci() {{
 
     # Extract file:line patterns from TypeScript/Next.js/ESLint output
     # Patterns: ./src/foo.ts(10,5), src/foo.ts:10:5, src/foo.ts(10), ./src/foo.tsx:10
-    loci=$(echo "$output" | grep -oE '(\\.?/)?src/[^ :()]+[:(][0-9]+[,):]' | grep -v node_modules | head -15 | sort -u)
+    loci=$(echo "$output" | grep -oE '(\\.?/)?src/[^ :()]+[:(][0-9]+[,):]' | grep -v node_modules | grep -v '\\.next' | head -15 | sort -u)
     if [[ -z "$loci" ]]; then
         # Fallback: any file:line pattern
-        loci=$(echo "$output" | grep -oE '[a-zA-Z0-9_./-]+\\.[a-z]+[:(][0-9]+[,):]' | grep -v node_modules | head -15 | sort -u)
+        loci=$(echo "$output" | grep -oE '[a-zA-Z0-9_./-]+\\.[a-z]+[:(][0-9]+[,):]' | grep -v node_modules | grep -v '\\.next' | head -15 | sort -u)
     fi
 
     echo "$loci"
@@ -398,7 +399,7 @@ append_validation_error() {{
     local loci
 
     loci=$(extract_error_loci "$output")
-    message="$label failure: $(echo "$output" | tail -20)"
+    message="$label failure: $(echo "$output" | tail -10 | head -c 1500)"
     if [[ -n "$loci" ]]; then
         message="$message
 Error loci:
@@ -702,14 +703,20 @@ run_track_validation() {{
     # Server Components (avoids clientReferenceManifest errors after rm -rf .next).
     if [[ "$validation_mode" == "partial" ]]; then
         run_validation_command "build" "$BUILD_CMD" "Build" "block"
-        run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "block"
+        # Skip typecheck when build failed — .next/types/ won't exist (BUG-032)
+        if [[ "$VALIDATION_OK" == true ]]; then
+            run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "block"
+        fi
         run_validation_command "lint" "$LINT_CMD" "Lint" "warn"
         run_validation_command "test" "$TEST_CMD" "Tests" "warn"
         return 0
     fi
 
     run_validation_command "build" "$BUILD_CMD" "Build" "contract"
-    run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "contract"
+    # Skip typecheck when build failed — .next/types/ won't exist (BUG-032)
+    if [[ "$VALIDATION_OK" == true ]]; then
+        run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "contract"
+    fi
     run_validation_command "lint" "$LINT_CMD" "Lint" "contract"
 
     if [[ "$REQUIRES_REAL_TESTS" == "true" ]] && validation_policy_contains "block_on" "test"; then
@@ -882,16 +889,7 @@ PROMPT_EOF
         fi
         append_prompt_list "$plan_file" "$index" "prompt_rules" "Track Rules" "- "
         append_bootstrap_prompt_guardrails "$plan_file" "$index"
-        cat <<'PROMPT_EOF'
-## Source Story
-
-PROMPT_EOF
-        if [[ -f "$STORIES_DIR/$source_story_id.md" ]]; then
-            cat "$STORIES_DIR/$source_story_id.md"
-        else
-            printf 'Implement: %s\\n' "$source_story_title"
-        fi
-        printf '\\n\\n'
+        printf '## Source Story\\n\\nRefer to `docs/stories/%s.md` (unchanged from first attempt).\\n\\n' "$source_story_id"
         cat <<'PROMPT_EOF'
 ## What to do
 
@@ -916,7 +914,7 @@ PROMPT_EOF
 
     codex exec \\
         --model "$CODEX_MODEL" \\
-        --config "model_reasoning_effort=\\"$CODEX_EFFORT\\"" \\
+        --config "model_reasoning_effort=\\"$CODEX_RETRY_EFFORT\\"" \\
         --sandbox danger-full-access \\
         --json \\
         --output-last-message "$output_file" \\
@@ -1022,6 +1020,7 @@ run_track_plan() {{
 
             if [[ "$VALIDATION_OK" == true ]]; then
                 append_progress "$track" "$unit_id" "$source_story_id" "DONE" "$unit_title (scaffold already satisfied)"
+
                 echo "[$track $unit_order/$total] $unit_id — DONE (scaffold already satisfied)"
                 # Commit scaffold state so next git diff is scoped correctly
                 local git_lock=""
@@ -1044,7 +1043,7 @@ run_track_plan() {{
             if [[ $attempt -gt 1 ]]; then
                 echo "  Retry $((attempt - 1))/$MAX_RETRIES for $unit_id..."
                 append_progress "$track" "$unit_id" "$source_story_id" "RETRY" "Attempt $attempt: $last_error"
-                sleep 5
+                sleep 1
             fi
 
             local codex_ok=""
@@ -1077,10 +1076,36 @@ run_track_plan() {{
             run_migrations "$track" "$needs_migrations"
             release_lock "$migration_lock"
 
-            local validation_lock=""
-            validation_lock=$(acquire_lock "validation")
-            run_track_validation "$track" "$validation_mode"
-            release_lock "$validation_lock"
+            if [[ "$validation_mode" == "partial" ]]; then
+                # Partial mode: only lock around build (writes to shared .next/).
+                # Typecheck/lint/test are read-only and can overlap across tracks.
+                VALIDATION_OK=true
+                VALIDATION_ERRORS=""
+                local build_lock=""
+                build_lock=$(acquire_lock "validation")
+                run_validation_command "build" "$BUILD_CMD" "Build" "block"
+                release_lock "$build_lock"
+                # Skip typecheck when build failed — .next/types/ won't exist (BUG-032)
+                if [[ "$VALIDATION_OK" == true ]]; then
+                    run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "block"
+                fi
+                # Scoped lint: only lint owned files instead of entire project
+                local owned_lint_files
+                owned_lint_files=$(jq -r ".stories[$i].owned_files[]" "$plan_file" 2>/dev/null \\
+                    | grep -E '\\.(ts|tsx|js|jsx)$' \\
+                    | tr '\\n' ' ')
+                if [[ -n "$owned_lint_files" ]]; then
+                    run_validation_command "lint" "npx eslint $owned_lint_files" "Lint" "warn"
+                else
+                    run_validation_command "lint" "$LINT_CMD" "Lint" "warn"
+                fi
+                run_validation_command "test" "$TEST_CMD" "Tests" "warn"
+            else
+                local validation_lock=""
+                validation_lock=$(acquire_lock "validation")
+                run_track_validation "$track" "$validation_mode"
+                release_lock "$validation_lock"
+            fi
 
             if [[ "$VALIDATION_OK" == true ]]; then
                 if [[ $attempt -gt 1 ]]; then

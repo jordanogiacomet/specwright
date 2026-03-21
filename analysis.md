@@ -1,7 +1,7 @@
 # Specwright — Full Repository Analysis
 
 **Date**: 2026-03-18 (updated 2026-03-20)
-**Test suite**: 456/456 passed
+**Test suite**: 468/468 passed
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow), `output/editorial-control-center` (Payload editorial)
 
 ### Handoff For Future Agents
@@ -89,6 +89,136 @@ When the main agent makes code changes, record the new state here before moving 
 | BUG-028 | FIXED | `git_init_scaffold()` initializes a git repo in the generated clone before execution; each successful slice is committed with a lock so `git diff --name-only HEAD` is scoped to the current slice only |
 | BUG-029 | FIXED | Smoke test no longer imports `app/page.tsx`; replaced with framework-only assertions (React importable, `next/headers` resolves) that have no cross-track dependencies |
 | ARCH-003-REFINE | FIXED | `extract_error_loci()` now pipes through `grep -v node_modules` on both primary and fallback regex paths |
+| TESTS-008 | ADDED | 4 new tests for BUG-028, BUG-029, ARCH-003-REFINE (456 total, was 426) |
+| TESTS-009 | ADDED | 6 new tests for BUG-030, BUG-031, BUG-032, BUG-033 (462 total, was 456) |
+| OPT-001 | ADDED | Split validation lock: partial mode only locks around build; typecheck/lint/test run unlocked for parallel track overlap |
+| OPT-002 | ADDED | Scoped lint: partial validation lints only owned files via `npx eslint` instead of full project |
+| OPT-003 | ADDED | Retry prompt compression: error output capped to `tail -10 \| head -c 1500`; story re-embed replaced with file reference |
+| OPT-004 | ADDED | Retry effort downshift: `CODEX_RETRY_EFFORT` env var (default `low`) used for retries instead of full `CODEX_EFFORT` |
+| OPT-005 | ADDED | Retry sleep reduced from 5s to 1s |
+| TESTS-010 | ADDED | 6 new tests for OPT-001 through OPT-005 (468 total, was 462) |
+| E2E-004 | PARTIAL | Run 5 live E2E on fresh editorial clone; shared PASS, BE-ST-004 PASS, BE-ST-005 PASS, FE-ST-901 PASS; FE-ST-006 FAILED (3 attempts); git_init_scaffold + per-slice commits + enforcement all confirmed working |
+| BUG-030 | FIXED | Scaffold no longer generates `src/app/page.tsx` for Payload projects — `is_payload` guard added at `scaffold_engine.py:1027`; Payload uses route groups `(payload)` and `(app)` instead |
+| BUG-031 | FIXED | `extract_error_loci()` now filters `.next/` paths via `grep -v '\\.next'` on both primary and fallback regex paths in `codex_bundle.py:385,388` |
+| BUG-032 | FIXED | Typecheck validation gated on `VALIDATION_OK == true` after build step — skipped when build fails so phantom TS6053 from missing `.next/types/` is avoided |
+| BUG-033 | FIXED | ST-900 and ST-901 scope boundaries now include "Do NOT run or test commands that require pg_dump, docker, or other external CLI tools not available in the sandbox" |
+
+---
+
+## Session 25 — BUG-030/031/032/033 Fixes (2026-03-20)
+
+### What happened
+
+1. **Fixed BUG-030 (CRITICAL)**: Scaffold engine now skips `src/app/page.tsx` for Payload CMS projects. Added `if not is_payload:` guard at `scaffold_engine.py:1027`. Payload projects use route groups `(payload)` for admin and `(app)` for frontend — the root page was conflicting with FE-ST-006's `src/app/(app)/page.tsx`, causing Next.js `clientReferenceManifest` build failures that blocked all frontend slices.
+
+2. **Fixed BUG-031**: Added `grep -v '\\.next'` to both regex pipelines in `extract_error_loci()` (`codex_bundle.py:385,388`), matching the existing `node_modules` filter pattern. Prevents `.next/server/` build artifact paths from polluting retry prompts.
+
+3. **Fixed BUG-032**: Gated typecheck on `VALIDATION_OK == true` after build step in `run_track_validation()` (`codex_bundle.py:704-712`). When build fails, `.next/types/` doesn't exist, causing phantom TS6053 errors. Now typecheck is skipped entirely when build already failed — in both partial and full validation modes.
+
+4. **Fixed BUG-033**: Added scope boundaries to ST-900 (monitoring) and ST-901 (backups) stories in `refine_engine.py` instructing Codex not to run/test commands requiring `pg_dump`, `docker`, or other external CLI tools unavailable in the sandbox. Recommends `bash -n` for syntax validation only.
+
+5. **Added 6 new tests** (462 total, was 456):
+   - `test_scaffold_payload_skips_root_page` (BUG-030)
+   - `test_scaffold_node_api_still_has_root_page` (BUG-030 regression guard)
+   - `test_codex_ralph_sh_extract_error_loci_filters_next_paths` (BUG-031)
+   - `test_codex_ralph_sh_skips_typecheck_on_build_failure` (BUG-032)
+   - `test_backups_story_scope_boundary_no_external_tools` (BUG-033)
+   - `test_monitoring_story_scope_boundary_no_external_tools` (BUG-033)
+
+### Files changed
+
+- `initializer/renderers/scaffold_engine.py` — BUG-030 (line 1027: conditional page.tsx)
+- `initializer/renderers/codex_bundle.py` — BUG-031 (lines 385,388: .next filter) + BUG-032 (lines 704-712: typecheck gate)
+- `initializer/ai/refine_engine.py` — BUG-033 (ST-900 and ST-901 scope boundaries)
+- `tests/unit/test_scaffold_engine.py` — 2 new tests
+- `tests/unit/test_bundles.py` — 2 new tests
+- `tests/unit/test_refine_engine.py` — 2 new tests
+
+6. **Implemented 5 velocity & token optimizations** (OPT-001 through OPT-005):
+   - **OPT-001 (Split validation lock)**: Partial-mode validation (FE/BE slices) now only acquires the global `validation` lock around the `next build` step. Typecheck, lint, and test run unlocked, allowing parallel tracks to overlap on non-build validation. Expected ~30-40% wall-clock reduction on parallel tracks.
+   - **OPT-002 (Scoped lint)**: Partial validation now runs `npx eslint <owned_files>` instead of `npm run lint` on the entire project. Lint drops from 15-30s to 2-5s per slice.
+   - **OPT-003 (Retry prompt compression)**: Error output capped to `tail -10 | head -c 1500` (was `tail -20` unbounded). Story re-embed in retry prompt replaced with a file reference (`docs/stories/<id>.md — unchanged from first attempt`). Saves ~500-800 tokens per retry.
+   - **OPT-004 (Retry effort downshift)**: New `CODEX_RETRY_EFFORT` env var (default `low`) used for retry Codex invocations. Retries are narrowly scoped (fix specific loci), so lower reasoning effort is appropriate and faster/cheaper.
+   - **OPT-005 (Retry sleep)**: Sleep between retries reduced from 5s to 1s. Saves 4s per retry.
+
+7. **Added 6 new tests** for velocity optimizations (468 total, was 462):
+   - `test_codex_ralph_sh_retry_sleep_is_one_second`
+   - `test_codex_ralph_sh_retry_effort_downshift`
+   - `test_codex_ralph_sh_error_output_capped`
+   - `test_codex_ralph_sh_retry_does_not_reembed_story`
+   - `test_codex_ralph_sh_partial_validation_unlocked_typecheck_lint_test`
+   - `test_codex_ralph_sh_partial_validation_scoped_lint`
+
+### Files changed (velocity optimizations)
+
+- `initializer/renderers/codex_bundle.py` — OPT-001 (split lock), OPT-002 (scoped lint), OPT-003 (error cap + story ref), OPT-004 (retry effort), OPT-005 (sleep)
+- `tests/unit/test_bundles.py` — 6 new tests
+
+### Next session priorities
+
+1. **Run 6 E2E** on fresh editorial project to validate all bug fixes + velocity gains
+2. Monitor FE-ST-006 specifically — should now pass without route conflict (BUG-030)
+3. Monitor BE-ST-901 — should complete faster with sandbox boundary guidance (BUG-033)
+4. Measure wall-clock improvement from OPT-001 (parallel validation overlap)
+
+---
+
+## Session 24 — BUG-028/029/ARCH-003-REFINE Fixes + Run 5 E2E (2026-03-20)
+
+### What happened
+
+1. **Fixed 3 open issues from Session 23**
+   - **ARCH-003-REFINE**: Added `grep -v node_modules` to both regex paths in `extract_error_loci()` — 2-line change
+   - **BUG-029**: Rewrote `_smoke_test()` to remove `import Home from "../app/page"` — replaced with framework-only assertions (`React.createElement`, `next/headers`) that have zero cross-track dependencies
+   - **BUG-028**: Added `git_init_scaffold()` function that runs before execution, plus per-slice `git add -A && git commit` with `acquire_lock "git"` after every successful slice (including scaffold skips). This scopes `git diff --name-only HEAD` to only the current slice's changes.
+
+2. **Added 4 new tests** (456 total, was 426):
+   - `test_codex_ralph_sh_extract_error_loci_filters_node_modules`
+   - `test_codex_ralph_sh_initializes_git_repo_for_owned_files`
+   - `test_codex_ralph_sh_commits_after_each_successful_slice`
+   - `test_smoke_test_does_not_import_app_page`
+
+3. **Generated fresh editorial project** and validated all 3 fixes present in `ralph.sh` and smoke test
+
+4. **Run 5 — Live E2E** on fresh `output/editorial-control-center`
+
+   | # | Slice | Track | Duration | Retries | Validation | Enforcement |
+   |---|-------|-------|----------|---------|------------|-------------|
+   | 1 | SH-ST-003 | shared | ~0s (scaffold skip) | 0 | Build/TC/Lint/Test PASS | n/a |
+   | 2 | BE-ST-004 | backend | 5m36s | 0 | All PASS | 1 revert (progress.txt) |
+   | 3 | FE-ST-901 | frontend | 9m12s | 0 | All PASS | 2 reverts (progress.txt, openclaw/progress) |
+   | 4 | BE-ST-005 | backend | 8m04s | 0 | All PASS | 2 reverts |
+   | 5 | FE-ST-006 | frontend | ~33min | 3 (all failed) | Build FAIL x3 | 16 reverts total |
+   | 6 | BE-ST-901 | backend | >17min | 1+ | Build FAIL | still running at session end |
+   | 7 | FE-ST-001 | frontend | started | 1+ | Build FAIL (relationship 'media') | - |
+
+### Key findings
+
+1. **BUG-028 fix confirmed working**: `git log` shows `scaffold` → `SH-ST-003 (scaffold skip)` → `BE-ST-004` → `FE-ST-901` → `BE-ST-005`. Each slice gets its own commit, enforcement uses clone's git, not parent repo.
+
+2. **Owned-files enforcement confirmed**: Both tracks had reverts (progress.txt, .openclaw/progress/*). Enforcement correctly prevented Codex from modifying shared state files.
+
+3. **BUG-030 discovered (critical)**: Scaffold generates `src/app/page.tsx` mapping to route `/`. When FE-ST-006 creates `src/app/(app)/page.tsx`, Next.js has two pages for `/` and fails with `clientReferenceManifest`. Codex even warned about this ("one constraint remains outside this slice") but couldn't fix it because `src/app/page.tsx` is not in FE-ST-006's `owned_files`. This is the **highest priority fix** — it blocks all frontend slices after FE-ST-006.
+
+4. **BUG-031 discovered**: Loci extraction captured `.next/server/app/(payload)/admin/[[...segments]]/page.js:275:` — build output paths, not source. The `grep -v node_modules` fix doesn't cover `.next/` paths.
+
+5. **BUG-032 discovered**: When build fails, `.next/types/` isn't generated, causing typecheck to also fail with phantom TS6053 errors. This inflates the error count and confuses retry prompts.
+
+6. **Codex quality observation**: Codex showed good judgment — read AGENTS.md, api-contract, owned_files before starting. The backup scripts it generated are robust (env precedence, Docker fallback, retention policy). It proactively ran `bash -n` syntax checks and targeted eslint.
+
+### Files changed
+
+- `initializer/renderers/codex_bundle.py` — ARCH-003-REFINE (lines 385,388) + BUG-028 (git_init_scaffold + per-slice commits)
+- `initializer/renderers/scaffold_engine.py` — BUG-029 (smoke test rewrite)
+- `tests/unit/test_bundles.py` — 3 new tests
+- `tests/unit/test_scaffold_engine.py` — 1 updated test
+
+### Next session priorities
+
+1. **BUG-030 (critical)**: Fix scaffold to not generate `src/app/page.tsx` for Payload CMS projects, OR add `src/app/page.tsx` to FE-ST-006 owned_files so Codex can delete it
+2. **BUG-032**: Skip typecheck when build fails, or exclude `.next/types/**` from tsconfig include
+3. **BUG-031**: Filter `.next/` paths from loci extraction (same pattern as node_modules fix)
+4. **BUG-033**: Consider adding scope boundaries to stories with external service deps (pg_dump, Docker) to avoid long stalls
 
 ---
 

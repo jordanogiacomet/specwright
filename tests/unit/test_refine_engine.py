@@ -160,6 +160,27 @@ def test_backups_story_expected_files():
     assert "scripts/restore.sh" in st901["expected_files"]
 
 
+def test_backups_story_scope_boundary_no_external_tools():
+    """BUG-033: backups story must warn Codex not to run pg_dump/docker in sandbox."""
+    spec = _make_spec()
+    result = refine_stories(spec)
+    st901 = next(s for s in result["stories"] if s["id"] == "ST-901")
+    boundaries = " ".join(st901["scope_boundaries"])
+    assert "pg_dump" in boundaries
+    assert "docker" in boundaries
+    assert "bash -n" in boundaries
+
+
+def test_monitoring_story_scope_boundary_no_external_tools():
+    """BUG-033: monitoring story must warn Codex not to run external tools in sandbox."""
+    spec = _make_spec()
+    result = refine_stories(spec)
+    st900 = next(s for s in result["stories"] if s["id"] == "ST-900")
+    boundaries = " ".join(st900["scope_boundaries"])
+    assert "docker" in boundaries
+    assert "bash -n" in boundaries
+
+
 # -------------------------------------------------------
 # refine_stories — ST-902 (rate limiting)
 # -------------------------------------------------------

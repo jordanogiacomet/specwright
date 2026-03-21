@@ -1024,7 +1024,8 @@ def write_scaffold(output_dir: Path, spec: dict[str, Any]) -> None:
 
     # --- Next.js app ---
     _write(output_dir, "src/app/layout.tsx", _root_layout(spec))
-    _write(output_dir, "src/app/page.tsx", _root_page(spec))
+    if not is_payload:
+        _write(output_dir, "src/app/page.tsx", _root_page(spec))
     _write(output_dir, "src/app/globals.css", _globals_css())
     _write(output_dir, "src/__tests__/smoke.test.ts", _smoke_test(spec))
 
