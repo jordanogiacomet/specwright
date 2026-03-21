@@ -698,6 +698,32 @@ def test_public_site_rendering_defaults_without_content_model():
     assert "/pages/" in criteria
 
 
+def test_public_site_rendering_owns_app_page_to_avoid_duplicate_route():
+    """BUG-038: (app)/page.tsx and (public)/page.tsx both resolve to '/'.
+    public-site-rendering must own (app)/page.tsx so Codex can relocate it."""
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "draft-publish"],
+        "capabilities": ["cms", "public-site"],
+        "stories": [],
+        "answers": {
+            "guided_answers": {
+                "content_model": {
+                    "collections": [
+                        {"name": "pages", "purpose": "Landing pages"},
+                        {"name": "posts", "purpose": "News articles"},
+                    ]
+                }
+            }
+        },
+    }
+    stories = generate_stories(spec)
+    public = next(s for s in stories if s.get("story_key") == "product.public-site-rendering")
+    expected_files = public["expected_files"]
+    assert "src/app/(public)/page.tsx" in expected_files
+    assert "src/app/(app)/page.tsx" in expected_files
+
+
 def test_no_public_site_rendering_without_capability():
     spec = {
         "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},

@@ -1134,6 +1134,28 @@ def test_codex_ralph_sh_skips_typecheck_on_build_failure(tmp_path):
 # -------------------------------------------------------
 
 
+def test_codex_ralph_sh_removes_tsbuildinfo_before_typecheck(tmp_path):
+    """BUG-037: stale tsconfig.tsbuildinfo can reference .next/types/ entries
+    from a previous build, causing TS6053 on typecheck. Must rm -f before tsc."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    # Every typecheck invocation must be preceded by rm -f tsconfig.tsbuildinfo
+    idx = 0
+    while True:
+        try:
+            idx_tc = content.index('"Typecheck"', idx)
+        except ValueError:
+            break
+        # Look backwards for rm -f tsconfig.tsbuildinfo within preceding 200 chars
+        preceding = content[max(0, idx_tc - 200):idx_tc]
+        assert "rm -f tsconfig.tsbuildinfo" in preceding, (
+            f"Typecheck at offset {idx_tc} is not preceded by rm -f tsconfig.tsbuildinfo"
+        )
+        idx = idx_tc + 1
+
+
 def test_codex_ralph_sh_retry_sleep_is_one_second(tmp_path):
     """Retry backoff should be 1s, not 5s."""
     spec = _make_spec()

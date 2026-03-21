@@ -1603,6 +1603,11 @@ def generate_stories(spec):
         for name in public_col_names:
             public_files.append(_frontend_page_path(stack, f"(public)/{name}/[slug]"))
         public_files.append(_frontend_page_path(stack, "(public)"))
+        # BUG-038: FE-ST-013 must own (app)/page.tsx so it can remove/relocate
+        # the placeholder home page created by bootstrap.frontend — otherwise
+        # both (app)/page.tsx and (public)/page.tsx resolve to "/" and Next.js
+        # rejects the build with a duplicate route error.
+        public_files.append(_frontend_page_path(stack, "(app)"))
         public_files.append(_component_path("PublicLayout"))
         public_files.append(_lib_path("public-content"))
 

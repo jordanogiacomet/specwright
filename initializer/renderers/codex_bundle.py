@@ -712,6 +712,9 @@ run_track_validation() {{
         run_validation_command "build" "$BUILD_CMD" "Build" "block"
         # Skip typecheck when build failed — .next/types/ won't exist (BUG-032)
         if [[ "$VALIDATION_OK" == true ]]; then
+            # BUG-037: remove stale tsbuildinfo so incremental tsc doesn't
+            # reference .next/types/ entries from a previous build.
+            rm -f tsconfig.tsbuildinfo
             run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "block"
         fi
         run_validation_command "lint" "$LINT_CMD" "Lint" "warn"
@@ -722,6 +725,9 @@ run_track_validation() {{
     run_validation_command "build" "$BUILD_CMD" "Build" "contract"
     # Skip typecheck when build failed — .next/types/ won't exist (BUG-032)
     if [[ "$VALIDATION_OK" == true ]]; then
+        # BUG-037: remove stale tsbuildinfo so incremental tsc doesn't
+        # reference .next/types/ entries from a previous build.
+        rm -f tsconfig.tsbuildinfo
         run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "contract"
     fi
     run_validation_command "lint" "$LINT_CMD" "Lint" "contract"
@@ -1099,6 +1105,9 @@ run_track_plan() {{
                 release_lock "$build_lock"
                 # Skip typecheck when build failed — .next/types/ won't exist (BUG-032)
                 if [[ "$VALIDATION_OK" == true ]]; then
+                    # BUG-037: remove stale tsbuildinfo so incremental tsc doesn't
+                    # reference .next/types/ entries from a previous build.
+                    rm -f tsconfig.tsbuildinfo
                     run_validation_command "typecheck" "$TYPECHECK_CMD" "Typecheck" "block"
                 fi
                 # Scoped lint: only lint owned files instead of entire project
