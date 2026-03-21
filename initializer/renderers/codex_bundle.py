@@ -521,8 +521,15 @@ enforce_owned_files() {{
         return 0
     fi
 
+    # Always allow derived artifacts that change when their source changes
+    local always_allowed="package-lock.json"
+
     while IFS= read -r changed; do
         [[ -n "$changed" ]] || continue
+        # Skip always-allowed derived files
+        if [[ " $always_allowed " == *" $changed "* ]]; then
+            continue
+        fi
         local is_owned=false
         while IFS= read -r owned; do
             [[ -n "$owned" ]] || continue
@@ -755,11 +762,6 @@ run_codex_unit() {{
     prompt_file="$(mktemp "$SCRIPT_DIR/.ralph-prompt.XXXXXX.md")"
     output_file="$(mktemp "$SCRIPT_DIR/.codex-last-message.XXXXXX.txt")"
 
-    _cleanup() {{
-        rm -f "$prompt_file" "$output_file"
-    }}
-    trap _cleanup RETURN
-
     {{
         printf '# Task: Implement %s — %s\\n\\n' "$unit_id" "$unit_title"
         cat <<'PROMPT_EOF'
@@ -830,14 +832,17 @@ PROMPT_EOF
         output_content=$(cat "$output_file")
         if [[ -z "$output_content" ]] || [[ "$output_content" == *'"type":"error"'* ]]; then
             echo "Codex returned empty or error output for $unit_id"
+            rm -f "$prompt_file" "$output_file"
             return 1
         fi
         echo "$output_content"
     else
         echo "No output file generated for $unit_id"
+        rm -f "$prompt_file" "$output_file"
         return 1
     fi
 
+    rm -f "$prompt_file" "$output_file"
     return $exit_code
 }}
 
@@ -860,11 +865,6 @@ run_codex_retry_unit() {{
 
     prompt_file="$(mktemp "$SCRIPT_DIR/.ralph-prompt.XXXXXX.md")"
     output_file="$(mktemp "$SCRIPT_DIR/.codex-last-message.XXXXXX.txt")"
-
-    _cleanup() {{
-        rm -f "$prompt_file" "$output_file"
-    }}
-    trap _cleanup RETURN
 
     {{
         printf '# RETRY: Fix %s — %s\\n\\n' "$unit_id" "$unit_title"
@@ -926,14 +926,17 @@ PROMPT_EOF
         output_content=$(cat "$output_file")
         if [[ -z "$output_content" ]] || [[ "$output_content" == *'"type":"error"'* ]]; then
             echo "Codex returned empty or error output for $unit_id (retry)"
+            rm -f "$prompt_file" "$output_file"
             return 1
         fi
         echo "$output_content"
     else
         echo "No output file generated for $unit_id (retry)"
+        rm -f "$prompt_file" "$output_file"
         return 1
     fi
 
+    rm -f "$prompt_file" "$output_file"
     return $exit_code
 }}
 

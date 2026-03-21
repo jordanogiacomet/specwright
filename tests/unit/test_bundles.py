@@ -1211,3 +1211,25 @@ def test_codex_ralph_sh_partial_validation_scoped_lint(tmp_path):
 
     content = (tmp_path / "ralph.sh").read_text()
     assert "npx eslint $owned_lint_files" in content
+
+
+def test_codex_ralph_sh_enforce_owned_files_allows_package_lock(tmp_path):
+    """BUG-034: package-lock.json must be always-allowed in enforce_owned_files."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    # enforce_owned_files should have an always_allowed list containing package-lock.json
+    assert 'always_allowed="package-lock.json"' in content
+
+
+def test_codex_ralph_sh_no_trap_cleanup_return(tmp_path):
+    """BUG-035: trap _cleanup RETURN causes unbound variable when scope leaks."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    # Must NOT use trap _cleanup RETURN pattern (causes unbound variable with set -u)
+    assert "trap _cleanup RETURN" not in content
+    # Must still clean up temp files (rm -f before each return)
+    assert 'rm -f "$prompt_file" "$output_file"' in content

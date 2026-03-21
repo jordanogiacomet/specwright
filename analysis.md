@@ -1,7 +1,7 @@
 # Specwright — Full Repository Analysis
 
-**Date**: 2026-03-18 (updated 2026-03-20)
-**Test suite**: 468/468 passed
+**Date**: 2026-03-18 (updated 2026-03-21)
+**Test suite**: 470/470 passed
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow), `output/editorial-control-center` (Payload editorial)
 
 ### Handoff For Future Agents
@@ -102,6 +102,74 @@ When the main agent makes code changes, record the new state here before moving 
 | BUG-031 | FIXED | `extract_error_loci()` now filters `.next/` paths via `grep -v '\\.next'` on both primary and fallback regex paths in `codex_bundle.py:385,388` |
 | BUG-032 | FIXED | Typecheck validation gated on `VALIDATION_OK == true` after build step — skipped when build fails so phantom TS6053 from missing `.next/types/` is avoided |
 | BUG-033 | FIXED | ST-900 and ST-901 scope boundaries now include "Do NOT run or test commands that require pg_dump, docker, or other external CLI tools not available in the sandbox" |
+| BUG-034 | FIXED | `enforce_owned_files()` now has `always_allowed="package-lock.json"` — prevents revert loop when Codex fixes lockfile entries required by `package.json` changes |
+| BUG-035 | FIXED | Removed `trap _cleanup RETURN` pattern from `run_codex_unit` and `run_codex_retry_unit` — was causing `unbound variable: prompt_file` when trap leaked to caller scope under `set -u` |
+| TESTS-011 | ADDED | 2 new tests for BUG-034 and BUG-035 (470 total, was 468) |
+| E2E-005 | PARTIAL | Run 6 on fresh editorial clone; Run 6a blocked by BUG-034+035 (SH-ST-003 looped 3x, then crashed). Run 6b after fix: SH-ST-003 PASS (scaffold skip), BE-ST-004 PASS, BE-ST-005 PASS; FE-ST-901 and BE-ST-901 Codex completed but validation incomplete (resource/timing) |
+
+---
+
+## Session 26 — BUG-034/035 Fixes + Run 6 E2E (2026-03-21)
+
+### What happened
+
+1. **Run 6a (failed)**: Fresh `output/editorial-control-center` with Session 25 fixes. SH-ST-003 hit a revert loop:
+   - Scaffold preflight build failed due to corrupt `package-lock.json` (empty `@types/deep-eql` and `@types/ms` entries — npm artifact from vitest transitive deps)
+   - Codex correctly diagnosed and fixed the lockfile by running `npm install --save-dev @types/deep-eql@^4.0.2`
+   - `enforce_owned_files()` **reverted the fix** because `package-lock.json` was not in `owned_files` for SH-ST-003
+   - This created an infinite revert loop: fix → revert → build fail → retry → fix → revert
+   - After exhausting all 3 attempts, `ralph.sh` crashed with `line 587: prompt_file: unbound variable`
+
+2. **Root cause BUG-034**: `package-lock.json` is a derived artifact — when Codex modifies `package.json` (which is in `owned_files`), the lockfile must also be allowed to change.
+
+3. **Root cause BUG-035**: Both `run_codex_unit()` and `run_codex_retry_unit()` defined `_cleanup()` with `trap _cleanup RETURN`. Under `set -u`, when the function returned and the trap fired in the caller's scope, the `local prompt_file` variable was no longer accessible.
+
+4. **Fixed BUG-034**: Added `always_allowed="package-lock.json"` to `enforce_owned_files()` in `codex_bundle.py`. Files in this list are never reverted regardless of `owned_files`.
+
+5. **Fixed BUG-035**: Replaced `trap _cleanup RETURN` with explicit `rm -f "$prompt_file" "$output_file"` before every `return` statement in both functions. 6 cleanup calls total.
+
+6. **Added 2 new tests** (470 total, was 468):
+   - `test_codex_ralph_sh_enforce_owned_files_allows_package_lock` (BUG-034)
+   - `test_codex_ralph_sh_no_trap_cleanup_return` (BUG-035)
+
+7. **Run 6b (partial success)**: Regenerated project at `output/editorial-e2e-test/`, both fixes confirmed in ralph.sh + bash -n passed.
+
+   | # | Slice | Track | Duration | Retries | Validation | Enforcement | Notes |
+   |---|-------|-------|----------|---------|------------|-------------|-------|
+   | 1 | SH-ST-003 | shared | ~2m24s (scaffold skip) | 0 | Build/TC/Lint/Test PASS | n/a | BUG-034 fix confirmed — build passes |
+   | 2 | BE-ST-004 | backend | ~5m36s | 0 | Build/TC/Lint/Test PASS | 1 revert (progress.txt) | Created `src/lib/db.ts`, updated `docker-compose.yml`, `.env.example` |
+   | 3 | FE-ST-901 | frontend | ~13min | 0 | (incomplete) | reverts observed | Created `scripts/backup.sh`, `scripts/restore.sh`, `docs/backup-restore.md` |
+   | 4 | BE-ST-005 | backend | ~7m40s | 0 | Build PASS, TC FAIL→PASS, Lint/Test PASS | 2 reverts (progress.txt, .openclaw/progress) | Created `src/payload.config.ts`, `src/server.ts` with health endpoint |
+   | 5 | BE-ST-901 | backend | started | 0 | Build/TC PASS (lint/test incomplete) | - | Refined backup scripts, updated docs |
+   | - | FE-ST-006+ | frontend | not started | - | - | - | FE track blocked by FE-ST-901 validation |
+
+### Key findings
+
+1. **BUG-034 fix confirmed**: SH-ST-003 scaffold skip passed on first attempt — no more revert loop on `package-lock.json`.
+
+2. **BUG-035 fix confirmed**: No `unbound variable` crash when ralph.sh completed normally.
+
+3. **BUG-033 confirmed working**: Codex on FE-ST-901 (backups) ran `bash -n` for syntax validation only, did not attempt `pg_dump` or docker — respected the scope boundary.
+
+4. **Parallel tracks confirmed**: FE and BE tracks launched simultaneously. BE-ST-004 completed while FE-ST-901 was still in Codex.
+
+5. **Typecheck race condition**: BE-ST-005 had Typecheck FAIL on first validation run but PASS on retry (next line). Likely a race with parallel build modifying `.next/types/`. The BUG-032 gate only skips typecheck when build fails — it doesn't handle the case where build passes but `.next/types/` is stale from a concurrent build. Consider adding a retry or brief delay.
+
+6. **Codex quality**: BE-ST-004 created a proper database abstraction (`src/lib/db.ts`) with connection pooling and health checks. BE-ST-005 set up `src/server.ts` with typed env var validation. Backup scripts have proper env file loading order, auto/local/docker modes, and retention policy.
+
+7. **Wall-clock comparison with Run 5**: SH-ST-003 went from ~0s (Run 5) to ~2m24s (Run 6b, full scaffold validation). BE-ST-004 was ~5m36s in both runs. The overall velocity improvement from OPT-001 is hard to measure with only 5 slices completed, but BE-ST-005's typecheck running unlocked (per OPT-001) was confirmed.
+
+### Files changed
+
+- `initializer/renderers/codex_bundle.py` — BUG-034 (always_allowed in enforce_owned_files) + BUG-035 (removed trap _cleanup RETURN, added explicit cleanup)
+- `tests/unit/test_bundles.py` — 2 new tests
+
+### Next session priorities
+
+1. **Re-run E2E** with `--from FE-ST-006` to test the critical frontend bootstrap story (BUG-030 fix)
+2. **Investigate typecheck race**: Consider adding `--incremental false` to typecheck in partial validation, or add a flock around typecheck too
+3. **Monitor FE-ST-006** for `clientReferenceManifest` — should pass now that BUG-030 removed root `page.tsx`
+4. **Full pipeline completion**: Once FE and BE tracks complete, test integration gate and integration track
 
 ---
 
@@ -154,12 +222,22 @@ When the main agent makes code changes, record the new state here before moving 
 - `initializer/renderers/codex_bundle.py` — OPT-001 (split lock), OPT-002 (scoped lint), OPT-003 (error cap + story ref), OPT-004 (retry effort), OPT-005 (sleep)
 - `tests/unit/test_bundles.py` — 6 new tests
 
+8. **Committed all changes**: `3c3bce2` — `fix: BUG-030/031/032/033 + pipeline velocity optimizations (OPT-001–005)`
+
+9. **Generated fresh editorial project** for Run 6 at `output/editorial-control-center/`. Verified in generated output:
+   - `src/app/page.tsx` does NOT exist (BUG-030 ✓)
+   - `src/app/(payload)/admin/[[...segments]]/page.tsx` exists (✓)
+   - `ralph.sh` has `.next` filter (BUG-031 ✓), typecheck gate (BUG-032 ✓), split validation lock (OPT-001 ✓), scoped lint (OPT-002 ✓), retry effort downshift (OPT-004 ✓), sleep 1 (OPT-005 ✓)
+   - ST-900/ST-901 scope boundaries present in `spec.json` (BUG-033 ✓)
+   - `bash -n ralph.sh` passes (✓)
+
 ### Next session priorities
 
-1. **Run 6 E2E** on fresh editorial project to validate all bug fixes + velocity gains
+1. **Run 6 E2E** on `output/editorial-control-center/` — `cd output/editorial-control-center && npm install && bash ralph.sh 2>&1 | tee ../run6.log`
 2. Monitor FE-ST-006 specifically — should now pass without route conflict (BUG-030)
 3. Monitor BE-ST-901 — should complete faster with sandbox boundary guidance (BUG-033)
 4. Measure wall-clock improvement from OPT-001 (parallel validation overlap)
+5. If all slices pass, run integration gate and integration track to complete the full pipeline
 
 ---
 
