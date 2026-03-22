@@ -317,3 +317,31 @@ def test_prepare_node_pipeline_contract_stays_aligned_with_ralph(tmp_path):
     assert 'run_track_plan "frontend" "$FRONTEND_PLAN_FILE" "$START_FROM" &' in ralph
     assert "npm test --if-present" not in ralph
     assert "npm run lint --if-present" not in ralph
+
+
+def test_prepare_preserves_progress_files_across_bundle_regeneration(tmp_path):
+    """BUG-043: prepare must not destroy .openclaw/progress/ files."""
+    spec = _make_spec()
+    _write_project_files(tmp_path, spec)
+    write_scaffold(tmp_path, spec)
+
+    # Simulate existing progress from a previous run
+    progress_dir = tmp_path / ".openclaw" / "progress"
+    progress_dir.mkdir(parents=True, exist_ok=True)
+    (progress_dir / "backend.txt").write_text(
+        "BE-SLICE-001 | ST-003 | DONE | Bootstrap database\n",
+        encoding="utf-8",
+    )
+    (progress_dir / "frontend.txt").write_text(
+        "FE-SLICE-001 | ST-005 | DONE | Setup pages\n",
+        encoding="utf-8",
+    )
+
+    with patch("initializer.flow.prepare_project._print_execution_preview"):
+        exit_code = run_prepare_project(str(tmp_path))
+
+    assert exit_code == 0
+    assert (progress_dir / "backend.txt").exists()
+    assert (progress_dir / "frontend.txt").exists()
+    assert "BE-SLICE-001" in (progress_dir / "backend.txt").read_text(encoding="utf-8")
+    assert "FE-SLICE-001" in (progress_dir / "frontend.txt").read_text(encoding="utf-8")

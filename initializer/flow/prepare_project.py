@@ -521,9 +521,25 @@ def run_prepare_project(path: str) -> int:
             story.pop("execution", None)
     spec["stories"] = generate_stories(spec)
 
+    # --- BUG-043: preserve progress files across bundle regeneration ---
+    openclaw_dir = project_dir / ".openclaw"
+    progress_dir = openclaw_dir / "progress"
+    saved_progress = {}
+    if progress_dir.exists():
+        for f in progress_dir.iterdir():
+            if f.is_file():
+                saved_progress[f.name] = f.read_text(encoding="utf-8")
+
     # --- Regenerate openclaw bundle (with latest spec) ---
     print("Regenerating .openclaw/ bundle...")
     write_openclaw_bundle(project_dir, spec)
+
+    # --- BUG-043: restore progress files ---
+    if saved_progress:
+        progress_dir.mkdir(parents=True, exist_ok=True)
+        for name, content in saved_progress.items():
+            (progress_dir / name).write_text(content, encoding="utf-8")
+        print(f"  Preserved {len(saved_progress)} progress file(s)")
 
     # --- Detect commands from actual project files ---
     print("Detecting validation commands...")

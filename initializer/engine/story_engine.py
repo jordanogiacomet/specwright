@@ -1234,6 +1234,7 @@ def generate_stories(spec):
         sched_depends = ["feature.draft-publish"]
         sched_files = [
             _lib_path("scheduler"),
+            _lib_path("content-status"),  # Codex needs to add "scheduled" status
             "src/jobs/publish-scheduled.ts",
             ".env.example (updated with SCHEDULED_PUBLISH_CRON or equivalent scheduler interval)",
         ]

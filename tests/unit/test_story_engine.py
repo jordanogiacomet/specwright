@@ -648,6 +648,22 @@ def test_scheduled_publishing_mentions_node_cron():
     assert "idempotent" in criteria
 
 
+def test_scheduled_publishing_includes_content_status_in_expected_files():
+    """BE-ST-012: scheduled-publishing must own content-status.ts so Codex
+    can add the 'scheduled' status without being reverted by enforce_owned_files."""
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "draft-publish", "scheduled-publishing"],
+        "stories": [],
+    }
+    stories = generate_stories(spec)
+    sched = next(s for s in stories if s.get("story_key") == "feature.scheduled-publishing")
+    expected = sched.get("expected_files", [])
+    assert any("content-status" in f for f in expected), (
+        f"content-status.ts missing from scheduled-publishing expected_files: {expected}"
+    )
+
+
 # -------------------------------------------------------
 # FIX-5: Public site rendering story
 # -------------------------------------------------------
