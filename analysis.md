@@ -1,7 +1,7 @@
 # Specwright — Full Repository Analysis
 
-**Date**: 2026-03-18 (updated 2026-03-22, Session 32)
-**Test suite**: 477/477 passed
+**Date**: 2026-03-18 (updated 2026-03-22, Session 33)
+**Test suite**: 479/479 passed
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow), `output/editorial-control-center` (Payload editorial)
 
 ### Handoff For Future Agents
@@ -125,6 +125,10 @@ When the main agent makes code changes, record the new state here before moving 
 | BUG-042 | **FIXED** | Sequential mode cascading failure: blocked slice in backend prevented frontend from running. Fix: both tracks always execute regardless of blocked slices in the other |
 | TESTS-015 | ADDED | 2 new tests for BUG-040b + SEQ-001 (477 total, was 475) |
 | E2E-009 | PARTIAL | Run 11: 14/15 backend DONE (BE-ST-012 BLOCKED — owned_files issue), frontend never ran (BUG-042). Run 11b: re-executed after BUG-042 fix but `prepare` wiped progress (BUG-043 candidate) |
+| BUG-043 | **FIXED** | `prepare` now saves and restores `.openclaw/progress/` files across bundle regeneration. Defensive fix: although `write_openclaw_bundle()` uses `mkdir exist_ok=True` (doesn't delete), explicit preservation ensures resume state survives any future changes |
+| BUG-044 | **FIXED** | `feature.scheduled-publishing` story now includes `_lib_path("content-status")` in `expected_files` so Codex can add the `"scheduled"` status to `content-status.ts` without being reverted by `enforce_owned_files()` |
+| TESTS-016 | ADDED | 2 new tests for BUG-043 + BUG-044 (479 total, was 477) |
+| E2E-010 | **MILESTONE** | Run 12: **Backend 14/14 DONE, Frontend 12/12 DONE, Integration 9/10 DONE.** First near-complete E2E run. Only IN-ST-013 (public site integration) failed — Postgres ECONNREFUSED during `next build` SSG (infra, not code). Zero pipeline BLOCKED. BE-ST-012 (scheduled publishing) now DONE with content-status.ts fix confirmed |
 
 ---
 
@@ -3338,3 +3342,77 @@ Requiring .../src/payload.config.ts
    - draft content returns `404`
 
 5. Consider pinning Payload version range in `_payload_package_json()` to reduce future API drift.
+
+---
+
+## Session 33 — BUG-043 + BUG-044 + Run 12 (2026-03-22)
+
+**Test suite**: 479/479 passed (2 new)
+**Commit**: `ffad56f`
+
+### Bugs Fixed
+
+#### BUG-043: `prepare` must preserve progress files
+- **Location**: `initializer/flow/prepare_project.py:524-540`
+- **Problem**: When `prepare` re-runs on an in-progress project, the `.openclaw/progress/` files that track resume state could be lost.
+- **Investigation**: `write_openclaw_bundle()` uses `mkdir(parents=True, exist_ok=True)` — does NOT delete the directory. No `shutil.rmtree` found. Root cause unclear (possibly `initializer new` was run instead of just `prepare`, or execution plan regeneration invalidated stale progress).
+- **Fix**: Defensive preservation — save all progress files in memory before `write_openclaw_bundle()`, restore after. Prints count of preserved files.
+- **Test**: `test_prepare_preserves_progress_files_across_bundle_regeneration`
+
+#### BUG-044: scheduled-publishing missing content-status.ts in owned_files
+- **Location**: `initializer/engine/story_engine.py:1236`
+- **Problem**: BE-ST-012 (scheduled publishing) needs to modify `src/lib/content-status.ts` to add `"scheduled"` status, but the file wasn't in `expected_files`. `enforce_owned_files()` reverted changes.
+- **Fix**: Added `_lib_path("content-status")` to `sched_files`. The file classifier at `_classify_expected_file_surface()` already recognizes `content-status` as a backend keyword.
+- **Test**: `test_scheduled_publishing_includes_content_status_in_expected_files`
+
+### Run 12 — Results
+
+**First near-complete E2E run on editorial/Payload stack.**
+
+| Track | DONE | Total | Notes |
+|-------|------|-------|-------|
+| Shared | 1/1 | 1 | Scaffold validated |
+| Backend | **14/14** | 14 | All DONE (2 retries: auth type, media spread type) |
+| Frontend | **12/12** | 12 | All DONE (FE-ST-013 needed 3 attempts: route group conflict, then segment config literal) |
+| Integration | **9/10** | 10 | IN-ST-013 VALIDATION fail (Postgres ECONNREFUSED during SSG build) |
+
+**Key observations:**
+- **BE-ST-012 DONE** — scheduled publishing now works with content-status.ts in owned_files (BUG-044 fix confirmed)
+- **Zero pipeline BLOCKED** — all failures are Codex code quality (retries fixed them) or infra (no Postgres for SSG)
+- **enforce_owned_files working correctly** — reverted unauthorized changes during integration slices
+- **Auto-retry effective** — 4 stories needed retries, all self-corrected (type errors, route conflicts)
+- **Total time**: ~2h for 37 slices (shared + backend + frontend + integration)
+
+**IN-ST-013 failure analysis:**
+- `next build` attempted SSG on `/(public)/page` which imports Payload, which tries to connect to Postgres
+- Postgres Docker is not running during validation builds
+- This is an **infrastructure limitation**, not a code or pipeline bug
+- Possible fix: ensure `docker compose up -d postgres` runs before integration validation, or configure Payload to skip DB connection during build
+
+### Files created by Codex during Run 12
+
+```
+src/lib/auth.ts           — Authentication helpers (register, login, logout)
+src/lib/content-status.ts — Editorial workflow with "scheduled" status
+src/lib/db.ts             — Postgres connection pool
+src/lib/permissions.ts    — Role-based access control
+src/lib/scheduler.ts      — node-cron scheduled publishing job
+src/lib/public-content.ts — Public content queries (created during integration)
+src/collections/Media.ts  — Media library collection
+src/collections/Pages.ts  — Pages collection with editorial workflow
+src/collections/Posts.ts  — Posts collection with editorial workflow
+src/collections/Users.ts  — Users collection with roles
+src/jobs/publish-scheduled.ts — Scheduled publishing cron job
+src/server.ts             — Custom server with /api/health endpoint
+src/app/api/preview/route.ts     — Draft preview API
+src/app/api/exit-preview/route.ts — Exit preview API
+src/app/(auth)/login/page.tsx     — Login page
+src/app/(public)/pages/[slug]/page.tsx — Public pages
+src/app/(public)/posts/[slug]/page.tsx — Public posts
+```
+
+### What still needs to happen
+
+1. **Fix IN-ST-013**: Either start Postgres before integration validation, or make Payload build work without DB connection
+2. **Run 13**: Re-run with IN-ST-013 fix to achieve 100% E2E completion
+3. **Validate runtime**: `docker compose up -d && npm run dev` on the generated project to verify it works end-to-end
