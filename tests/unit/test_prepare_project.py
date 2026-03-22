@@ -286,8 +286,9 @@ def test_prepare_re_derives_stale_execution_metadata(tmp_path):
     assert pub_unit is not None, "ST-010 frontend unit not found in plan"
     owned = pub_unit.get("owned_files", [])
     # After re-derivation, frontend_files should contain the expected_files
+    # including BUG-038 fix: (app)/page.tsx must be owned by public-site story
     assert "src/app/(public)/page.tsx" in owned
-    assert "src/components/PublicNav.tsx" in owned
+    assert "src/app/(app)/page.tsx" in owned
 
 
 def test_prepare_node_pipeline_contract_stays_aligned_with_ralph(tmp_path):
