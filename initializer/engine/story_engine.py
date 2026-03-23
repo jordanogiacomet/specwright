@@ -638,6 +638,20 @@ def generate_stories(spec):
             f"`{migration_status_cmd}`) and do NOT invent a parallel migration workflow."
         )
 
+    # Payload v3 strict type hints that Codex frequently gets wrong on first attempt.
+    # Adding these as scope boundaries reduces retry loops (observed in Run 14: BE-ST-008,
+    # BE-ST-010, IN-ST-011 all failed on these exact patterns).
+    if backend in ("payload", "payload-cms"):
+        payload_type_boundary = (
+            "Payload v3 type rules: "
+            "(1) Access control functions MUST return `Promise<boolean | Where>` (async) — the `Access` type is `(args: AccessArgs) => Promise<AccessResult>`. "
+            "(2) `req.user` is `User | null` — always null-check before accessing `.id`, `.role`, or `.collection`. "
+            "(3) Hook functions (`beforeChange`, `afterChange`) receive `{ req, data, originalDoc }` — `req.user` follows the same null rule. "
+            "(4) Any function passed to `access.read`, `access.create`, `access.update`, `access.delete` in a collection config must match the `Access` signature exactly."
+        )
+    else:
+        payload_type_boundary = None
+
     bootstrap_validation_commands = []
     install_cmd = validation_bundle.get("setup", {}).get("install")
     if install_cmd:
@@ -960,10 +974,13 @@ def generate_stories(spec):
             "Add registration, login, logout and session management.",
             acceptance_criteria=auth_ac,
             scope_boundaries=[
-                "Do NOT implement OAuth or social login in this story",
-                "Do NOT implement password reset or email verification",
-                "Do NOT implement MFA",
-                migration_dir_boundary,
+                b for b in [
+                    "Do NOT implement OAuth or social login in this story",
+                    "Do NOT implement password reset or email verification",
+                    "Do NOT implement MFA",
+                    migration_dir_boundary,
+                    payload_type_boundary,
+                ] if b is not None
             ],
             expected_files=auth_files,
             depends_on=["bootstrap.backend", "bootstrap.frontend"],
@@ -1017,9 +1034,12 @@ def generate_stories(spec):
             f"Define roles ({role_list_str}), permissions, and enforce authorization boundaries.",
             acceptance_criteria=roles_ac,
             scope_boundaries=[
-                "Do NOT implement granular per-field permissions unless required by spec",
-                "Do NOT implement a permissions admin UI — enforce in backend only",
-                migration_dir_boundary,
+                b for b in [
+                    "Do NOT implement granular per-field permissions unless required by spec",
+                    "Do NOT implement a permissions admin UI — enforce in backend only",
+                    migration_dir_boundary,
+                    payload_type_boundary,
+                ] if b is not None
             ],
             expected_files=roles_files,
             depends_on=["feature.authentication"],
@@ -1163,11 +1183,14 @@ def generate_stories(spec):
             "Add draft, review, and publish states with role-based transitions.",
             acceptance_criteria=dp_ac,
             scope_boundaries=[
-                "Do NOT implement versioning or revision history",
-                "Do NOT implement scheduled publishing — that is a separate story",
-                "Do NOT implement approval notifications",
-                "Do NOT implement public page components in this story — only the workflow and publish visibility rules",
-                migration_dir_boundary,
+                b for b in [
+                    "Do NOT implement versioning or revision history",
+                    "Do NOT implement scheduled publishing — that is a separate story",
+                    "Do NOT implement approval notifications",
+                    "Do NOT implement public page components in this story — only the workflow and publish visibility rules",
+                    migration_dir_boundary,
+                    payload_type_boundary,
+                ] if b is not None
             ],
             expected_files=dp_files,
             depends_on=draft_depends,
@@ -1210,9 +1233,12 @@ def generate_stories(spec):
                 "Preview responses are marked no-store/noindex and do not leak draft content to anonymous users or search engines",
             ]
             preview_boundaries = [
-                "Do NOT implement live editing or inline editing",
-                "Do NOT create a separate second public site just for preview",
-                "Do NOT allow anonymous preview links in this story",
+                b for b in [
+                    "Do NOT implement live editing or inline editing",
+                    "Do NOT create a separate second public site just for preview",
+                    "Do NOT allow anonymous preview links in this story",
+                    payload_type_boundary,
+                ] if b is not None
             ]
             preview_manual_check = "While logged in as an editorial role, enable preview for a draft page/post, verify it renders, then exit preview and confirm the public slug still hides the draft."
 

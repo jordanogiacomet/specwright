@@ -968,3 +968,53 @@ def test_public_site_rendering_has_force_dynamic_scope_boundary():
     assert any("force-dynamic" in b for b in boundaries), (
         "public-site-rendering must instruct Codex to use force-dynamic to avoid SSG DB issues"
     )
+
+
+def test_payload_stories_have_type_boundary():
+    """Payload Access/hook type hints reduce Codex retry loops (Run 14: BE-ST-008, BE-ST-010, IN-ST-011)."""
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "roles", "draft-publish", "preview"],
+        "capabilities": ["cms", "public-site"],
+        "stories": [],
+        "answers": {
+            "guided_answers": {
+                "content_model": {
+                    "collections": [
+                        {"name": "pages", "purpose": "Landing pages"},
+                    ]
+                }
+            }
+        },
+    }
+    stories = generate_stories(spec)
+    stories_by_key = {s["story_key"]: s for s in stories}
+
+    for key in ["feature.authentication", "feature.roles", "feature.draft-publish", "feature.preview"]:
+        story = stories_by_key.get(key)
+        assert story is not None, f"{key} not generated"
+        boundaries = story.get("scope_boundaries", [])
+        assert any("req.user" in b and "Access" in b for b in boundaries), (
+            f"{key} must include Payload v3 type boundary (Access signature + req.user null-check)"
+        )
+
+
+def test_non_payload_stories_omit_payload_type_boundary():
+    """Non-Payload backends should NOT get Payload-specific type boundaries."""
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "node-api", "database": "postgres"},
+        "features": ["authentication", "roles"],
+        "capabilities": [],
+        "stories": [],
+        "answers": {"guided_answers": {}},
+    }
+    stories = generate_stories(spec)
+    stories_by_key = {s["story_key"]: s for s in stories}
+
+    for key in ["feature.authentication", "feature.roles"]:
+        story = stories_by_key.get(key)
+        assert story is not None, f"{key} not generated"
+        boundaries = story.get("scope_boundaries", [])
+        assert not any("Payload v3" in b for b in boundaries), (
+            f"{key} should not have Payload type boundary for node-api backend"
+        )
