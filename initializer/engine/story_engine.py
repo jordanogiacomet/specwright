@@ -1630,6 +1630,7 @@ def generate_stories(spec):
                 "Do NOT implement comments or user interaction on public pages",
                 "Do NOT implement search on public pages — that is a separate story",
                 "Do NOT implement pagination in this story — show latest items only",
+                "All public pages that fetch data MUST export `export const dynamic = 'force-dynamic'` to prevent Static Site Generation at build time — the database is not available during `next build`",
             ],
             expected_files=public_files,
             depends_on=public_depends,

@@ -522,8 +522,14 @@ def _vitest_config(spec: dict[str, Any]) -> str:
         setup_files = '    setupFiles: ["./src/__tests__/setup-env.ts"],\n'
 
     return (
+        'import path from "node:path";\n'
         'import { defineConfig } from "vitest/config";\n\n'
         "export default defineConfig({\n"
+        "  resolve: {\n"
+        "    alias: {\n"
+        '      "@": path.resolve(__dirname, "src"),\n'
+        "    },\n"
+        "  },\n"
         "  esbuild: {\n"
         '    jsx: "automatic",\n'
         '    jsxImportSource: "react",\n'

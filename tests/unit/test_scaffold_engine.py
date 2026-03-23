@@ -533,6 +533,17 @@ def test_payload_vitest_config_loads_env_setup_file(tmp_path):
     assert 'setupFiles: ["./src/__tests__/setup-env.ts"]' in content
 
 
+def test_vitest_config_has_path_alias_for_src(tmp_path):
+    """BUG-046: Vitest must resolve @/ alias to src/ so imports like @/lib/permissions work."""
+    write_scaffold(tmp_path, _make_spec())
+
+    content = (tmp_path / "vitest.config.ts").read_text()
+    assert '"@"' in content
+    assert '"src"' in content
+    assert "resolve" in content
+    assert "alias" in content
+
+
 def test_eslint_config_uses_eslintrc_compat(tmp_path):
     write_scaffold(tmp_path, _make_spec())
 

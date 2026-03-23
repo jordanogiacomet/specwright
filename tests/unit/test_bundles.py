@@ -1310,3 +1310,18 @@ def test_codex_ralph_sh_recommits_scaffold_on_existing_git(tmp_path):
     assert '"scaffold update"' in content
     assert "git diff --quiet HEAD" in content
     assert "git ls-files --others --exclude-standard" in content
+
+
+def test_codex_ralph_sh_starts_postgres_before_integration_gate(tmp_path):
+    """IN-ST-013: Docker Postgres must start before integration gate validation."""
+    spec = _make_spec()
+    write_codex_bundle(tmp_path, spec)
+
+    content = (tmp_path / "ralph.sh").read_text()
+    # Postgres startup must appear before integration gate validation
+    pg_idx = content.find("docker compose up -d postgres")
+    gate_idx = content.find('run_track_validation "integration-gate"')
+    assert pg_idx != -1, "ralph.sh must start Postgres before integration gate"
+    assert gate_idx != -1, "ralph.sh must have integration gate validation"
+    assert pg_idx < gate_idx, "Postgres startup must come before integration gate validation"
+    assert "pg_isready" in content

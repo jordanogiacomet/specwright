@@ -943,3 +943,28 @@ def test_preview_and_scheduled_are_not_generated_without_draft_publish():
     keys = [s.get("story_key") for s in stories]
     assert "feature.preview" not in keys
     assert "feature.scheduled-publishing" not in keys
+
+
+def test_public_site_rendering_has_force_dynamic_scope_boundary():
+    """IN-ST-013: public pages must use force-dynamic to avoid SSG DB connection at build time."""
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "draft-publish"],
+        "capabilities": ["cms", "public-site"],
+        "stories": [],
+        "answers": {
+            "guided_answers": {
+                "content_model": {
+                    "collections": [
+                        {"name": "pages", "purpose": "Landing pages"},
+                    ]
+                }
+            }
+        },
+    }
+    stories = generate_stories(spec)
+    public = next(s for s in stories if s.get("story_key") == "product.public-site-rendering")
+    boundaries = public.get("scope_boundaries", [])
+    assert any("force-dynamic" in b for b in boundaries), (
+        "public-site-rendering must instruct Codex to use force-dynamic to avoid SSG DB issues"
+    )

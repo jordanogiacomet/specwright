@@ -1269,6 +1269,20 @@ else
     if [[ $FAILURES -eq 0 ]]; then
         echo ""
         echo "=== Integration Gate: cross-track validation ==="
+
+        # Start database for integration validation (SSG pages may need DB)
+        if command -v docker &>/dev/null && [[ -f docker-compose.yml ]]; then
+            echo "Starting database for integration validation..."
+            docker compose up -d postgres 2>/dev/null || true
+            for db_gate_attempt in $(seq 1 15); do
+                if docker compose exec -T postgres pg_isready -U postgres &>/dev/null; then
+                    echo "Database ready."
+                    break
+                fi
+                sleep 2
+            done
+        fi
+
         VALIDATION_OK=true
         VALIDATION_ERRORS=""
         run_track_validation "integration-gate" "full"

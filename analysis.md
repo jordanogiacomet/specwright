@@ -1,7 +1,7 @@
 # Specwright — Full Repository Analysis
 
-**Date**: 2026-03-18 (updated 2026-03-22, Session 33)
-**Test suite**: 479/479 passed
+**Date**: 2026-03-18 (updated 2026-03-23, Session 34)
+**Test suite**: 482/482 passed
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow), `output/editorial-control-center` (Payload editorial)
 
 ### Handoff For Future Agents
@@ -129,6 +129,75 @@ When the main agent makes code changes, record the new state here before moving 
 | BUG-044 | **FIXED** | `feature.scheduled-publishing` story now includes `_lib_path("content-status")` in `expected_files` so Codex can add the `"scheduled"` status to `content-status.ts` without being reverted by `enforce_owned_files()` |
 | TESTS-016 | ADDED | 2 new tests for BUG-043 + BUG-044 (479 total, was 477) |
 | E2E-010 | **MILESTONE** | Run 12: **Backend 14/14 DONE, Frontend 12/12 DONE, Integration 9/10 DONE.** First near-complete E2E run. Only IN-ST-013 (public site integration) failed — Postgres ECONNREFUSED during `next build` SSG (infra, not code). Zero pipeline BLOCKED. BE-ST-012 (scheduled publishing) now DONE with content-status.ts fix confirmed |
+| BUG-045a | **FIXED** | `product.public-site-rendering` scope boundary now instructs Codex to export `dynamic = 'force-dynamic'` on all data-fetching pages — prevents SSG from attempting DB connection during `next build` |
+| BUG-045b | **FIXED** | ralph.sh now starts Docker Postgres (`docker compose up -d postgres` + `pg_isready` wait loop) before integration gate validation — fallback for any SSG page that still needs DB at build time |
+| TESTS-017 | ADDED | 2 new tests for BUG-045a + BUG-045b (481 total, was 479) |
+| BUG-046 | **FIXED** | Generated `vitest.config.ts` now includes `resolve.alias` mapping `@` to `src/` — Vitest previously could not resolve `@/lib/permissions` imports that Next.js/TypeScript resolves via tsconfig paths |
+| TESTS-018 | ADDED | 1 new test for BUG-046 (482 total, was 481) |
+
+---
+
+## Session 34 — IN-ST-013 Fix: SSG + Postgres (2026-03-23)
+
+**Test suite**: 482/482 passed (2 new)
+
+### Problem
+
+Run 12 achieved 35/37 slices. The only failure was **IN-ST-013** (public site integration): `next build` attempted Static Site Generation on `/(public)/page` which imports Payload, which tries to connect to Postgres. Docker Postgres was not running during validation builds in ralph.sh.
+
+### Fixes Applied
+
+#### BUG-045a: Scope boundary — force-dynamic
+- **Location**: `initializer/engine/story_engine.py:1633`
+- **Fix**: Added scope boundary to `product.public-site-rendering` story: "All public pages that fetch data MUST export `export const dynamic = 'force-dynamic'` to prevent Static Site Generation at build time — the database is not available during `next build`"
+- **Effect**: Codex will generate pages with `force-dynamic` export, preventing SSG from attempting DB connection
+
+#### BUG-045b: Docker Postgres before integration gate
+- **Location**: `initializer/renderers/codex_bundle.py:1271-1283`
+- **Fix**: Before `run_track_validation "integration-gate" "full"`, ralph.sh now runs `docker compose up -d postgres` with a `pg_isready` wait loop (max 30s). Guarded by `command -v docker` and `[[ -f docker-compose.yml ]]` checks.
+- **Effect**: Fallback safety net — even if a page doesn't use `force-dynamic`, Postgres will be available during integration validation
+
+### Tests Added
+
+1. `test_public_site_rendering_has_force_dynamic_scope_boundary` — verifies scope_boundaries of public-site-rendering story includes `force-dynamic`
+2. `test_codex_ralph_sh_starts_postgres_before_integration_gate` — verifies ralph.sh has `docker compose up -d postgres` before integration gate, with `pg_isready` readiness check
+
+### Files changed
+
+- `initializer/engine/story_engine.py` — scope boundary added to `product.public-site-rendering`
+- `initializer/renderers/codex_bundle.py` — Docker Postgres startup before integration gate
+- `tests/unit/test_story_engine.py` — 1 new test
+- `tests/unit/test_bundles.py` — 1 new test
+
+### Run 13 — Results
+
+| Track | DONE | SKIP | BLOCKED | Total |
+|-------|------|------|---------|-------|
+| Shared | 1 | 0 | 0 | 1 |
+| Backend | 9 | 5 | **1** (BE-ST-009) | 14 |
+| Frontend | 4 | 8 | 0 | 12 |
+| Integration | — | — | **skipped** (FAILURES>0) | 10 |
+
+**Total: 14 DONE + 13 SKIP + 1 BLOCKED = 28/37 executed, integration skipped**
+
+**Key observations:**
+- **BUG-045a confirmed**: FE-ST-013 (public-site) used `dynamic = "force-dynamic"` on all pages — Codex respected the scope boundary
+- **BE-ST-007/008**: Both needed retries (Payload v3 strict types) — auto-retry fixed them
+- **BE-ST-009 BLOCKED (BUG-046)**: `src/collections/Media.ts` imports `@/lib/permissions` but Vitest cannot resolve `@/` alias. Build/TC/Lint pass (Next.js resolves via tsconfig paths) but Tests fail. All 3 attempts failed.
+- **Integration skipped**: Because `FAILURES > 0` from BE-ST-009, integration gate was never reached — so BUG-045b (Docker Postgres) was not tested
+
+#### BUG-046: Vitest cannot resolve `@/` path alias
+- **Location**: `initializer/renderers/scaffold_engine.py:524-538` (`_vitest_config()`)
+- **Problem**: Generated `vitest.config.ts` has no `resolve.alias` — `@/` imports work in Next.js (via `tsconfig.json` paths) but not in Vitest
+- **Fix**: Added `resolve.alias: { "@": path.resolve(__dirname, "src") }` and `import path from "node:path"` to generated `vitest.config.ts`
+- **Test**: `test_vitest_config_has_path_alias_for_src`
+
+### What still needs to happen
+
+1. **Run 14**: Re-run with BUG-046 fix — BE-ST-009 should pass, enabling integration track
+2. **Validate BUG-045b**: Integration gate should trigger Docker Postgres startup
+3. **Validate runtime**: `docker compose up -d && npm run dev` on generated project
+4. **If Run 14 passes 37/37**: Editorial stack fully validated
 
 ---
 
@@ -3413,6 +3482,6 @@ src/app/(public)/posts/[slug]/page.tsx — Public posts
 
 ### What still needs to happen
 
-1. **Fix IN-ST-013**: Either start Postgres before integration validation, or make Payload build work without DB connection
+1. ~~**Fix IN-ST-013**: Either start Postgres before integration validation, or make Payload build work without DB connection~~ → Fixed in Session 34 (BUG-045a + BUG-045b)
 2. **Run 13**: Re-run with IN-ST-013 fix to achieve 100% E2E completion
 3. **Validate runtime**: `docker compose up -d && npm run dev` on the generated project to verify it works end-to-end
