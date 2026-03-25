@@ -1018,3 +1018,55 @@ def test_non_payload_stories_omit_payload_type_boundary():
         assert not any("Payload v3" in b for b in boundaries), (
             f"{key} should not have Payload type boundary for node-api backend"
         )
+
+
+def test_payload_stories_include_config_in_expected_files():
+    """BUG-048: Payload auth/roles/draft-publish/preview must own payload.config.ts."""
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication", "roles", "media-library", "draft-publish", "preview"],
+        "capabilities": ["cms", "public-site"],
+        "stories": [],
+        "answers": {
+            "guided_answers": {
+                "cms": {
+                    "collections": [
+                        {"name": "posts", "purpose": "Blog posts"},
+                        {"name": "pages", "purpose": "Static pages"},
+                    ]
+                }
+            }
+        },
+    }
+    stories = generate_stories(spec)
+    stories_by_key = {s["story_key"]: s for s in stories}
+
+    for key in ["feature.authentication", "feature.roles", "feature.draft-publish", "feature.preview"]:
+        story = stories_by_key.get(key)
+        assert story is not None, f"{key} not generated"
+        files = story.get("expected_files", [])
+        assert any("payload.config.ts" in f for f in files), (
+            f"{key} must include payload.config.ts in expected_files for Payload backend"
+        )
+
+
+def test_payload_type_boundary_prohibits_dist_imports():
+    """BUG-048: Payload type boundary must prohibit payload/dist/ imports."""
+    spec = {
+        "stack": {"frontend": "nextjs", "backend": "payload", "database": "postgres"},
+        "features": ["authentication"],
+        "capabilities": [],
+        "stories": [],
+        "answers": {"guided_answers": {}},
+    }
+    stories = generate_stories(spec)
+    stories_by_key = {s["story_key"]: s for s in stories}
+
+    story = stories_by_key["feature.authentication"]
+    boundaries = story.get("scope_boundaries", [])
+    assert any("payload/dist/" in b for b in boundaries), (
+        "Payload type boundary must prohibit importing from payload/dist/"
+    )
+    assert any(".ts" in b and "extension" in b.lower() for b in boundaries), (
+        "Payload type boundary must prohibit .ts extensions in local imports"
+    )

@@ -1,7 +1,7 @@
 # Specwright — Full Repository Analysis
 
 **Date**: 2026-03-18 (updated 2026-03-25, Session 35)
-**Test suite**: 487/487 passed
+**Test suite**: 489/489 passed
 **Generated projects inspected**: `output/todo-app`, `output/todo-app-design`, `output/taskflow` (node-api), `output/newshub-cms` (Payload), `output/dentaldesk` (--assist flow), `output/editorial-control-center` (Payload editorial)
 
 ### Handoff For Future Agents
@@ -139,12 +139,14 @@ When the main agent makes code changes, record the new state here before moving 
 | TESTS-019 | ADDED | 2 new tests for GUARD-003 (484 total, was 482) |
 | BUG-047 | **FIXED** | `prepare` now auto-creates a git bundle backup when Codex slice commits are detected; `initializer new` refuses to overwrite a directory with existing slice commits; `ralph.sh` tags successful runs with `run-complete-<timestamp>` for recovery |
 | TESTS-020 | ADDED | 3 new tests for BUG-047: run-complete tag, prepare backup, create_output_dir guard (487 total, was 484) |
+| BUG-048 | **FIXED** | Run 15 regression: BE-ST-007/008/009 BLOCKED by webpack `module-not-found` in chain `layout→payload.config→Users→auth`. Three interacting causes: (a) `payload.config.ts` not in owned_files for auth/roles/draft-publish/preview — enforcement reverted Codex fixes each retry; (b) Codex imported from `payload/dist/` internal paths causing webpack failures; (c) scaffold generated `.ts` extension imports in `payload.config.ts`. Fix: added `payload.config.ts` to owned_files, added scope boundary prohibiting `payload/dist/` and `.ts` extension imports, fixed scaffold template |
+| TESTS-021 | ADDED | 2 new tests for BUG-048: payload.config.ts in expected_files, dist import prohibition (489 total, was 487) |
 
 ---
 
 ## Session 35 — Run 14: 100% E2E + Payload Type Boundaries (2026-03-23)
 
-**Test suite**: 487/487 passed (5 new: 2 GUARD-003 + 3 BUG-047)
+**Test suite**: 489/489 passed (7 new: 2 GUARD-003 + 3 BUG-047 + 2 BUG-048)
 
 ### Run 14 — Results
 

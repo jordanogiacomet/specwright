@@ -258,12 +258,13 @@ def test_payload_config_rejects_missing_secret(tmp_path):
     assert 'throw new Error("PAYLOAD_SECRET env var is required")' in content
 
 
-def test_payload_config_imports_users_with_runtime_safe_extension(tmp_path):
+def test_payload_config_imports_users_without_ts_extension(tmp_path):
+    """BUG-048: payload.config.ts must use extensionless imports to avoid webpack failures."""
     write_scaffold(tmp_path, _payload_spec())
 
     content = (tmp_path / "src/payload.config.ts").read_text()
-    assert './collections/Users.ts' in content
-    assert './collections/Users";' not in content
+    assert './collections/Users"' in content
+    assert './collections/Users.ts' not in content
 
 
 def test_payload_next_config_uses_with_payload(tmp_path):

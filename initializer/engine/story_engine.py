@@ -647,7 +647,9 @@ def generate_stories(spec):
             "(1) Access control functions MUST return `Promise<boolean | Where>` (async) — the `Access` type is `(args: AccessArgs) => Promise<AccessResult>`. "
             "(2) `req.user` is `User | null` — always null-check before accessing `.id`, `.role`, or `.collection`. "
             "(3) Hook functions (`beforeChange`, `afterChange`) receive `{ req, data, originalDoc }` — `req.user` follows the same null rule. "
-            "(4) Any function passed to `access.read`, `access.create`, `access.update`, `access.delete` in a collection config must match the `Access` signature exactly."
+            "(4) Any function passed to `access.read`, `access.create`, `access.update`, `access.delete` in a collection config must match the `Access` signature exactly. "
+            "(5) Do NOT import from `payload/dist/` or any internal Payload path — use ONLY the public API: `import { ... } from 'payload'`. "
+            "(6) All local imports in TypeScript files MUST omit the `.ts` extension (e.g. `import { X } from './lib/auth'` NOT `'./lib/auth.ts'`)."
         )
     else:
         payload_type_boundary = None
@@ -962,6 +964,7 @@ def generate_stories(spec):
         if backend in ("payload", "payload-cms"):
             auth_ac.append("Payload Users collection has auth enabled")
             auth_files.append(_backend_path(stack, "Users"))
+            auth_files.append("src/payload.config.ts")
         else:
             auth_files.append("src/api/auth.ts")
 
@@ -1025,6 +1028,7 @@ def generate_stories(spec):
             else:
                 roles_ac.append("Payload access control functions use role checks")
             roles_files.append(f"{_backend_path(stack, 'Users')} (updated with roles field)")
+            roles_files.append("src/payload.config.ts")
         else:
             roles_files.append("src/middleware/authorize.ts")
 
@@ -1176,6 +1180,8 @@ def generate_stories(spec):
         dp_files = [_lib_path("content-status")]
         if "cms" in capabilities:
             dp_files.extend(_collection_file_path(stack, name) for name in public_collections)
+        if backend in ("payload", "payload-cms"):
+            dp_files.append("src/payload.config.ts")
 
         upsert_story(
             "feature.draft-publish",
@@ -1241,6 +1247,9 @@ def generate_stories(spec):
                 ] if b is not None
             ]
             preview_manual_check = "While logged in as an editorial role, enable preview for a draft page/post, verify it renders, then exit preview and confirm the public slug still hides the draft."
+
+        if backend in ("payload", "payload-cms") and "src/payload.config.ts" not in preview_files:
+            preview_files.append("src/payload.config.ts")
 
         upsert_story(
             "feature.preview",
